@@ -4,6 +4,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const User = require("../models/User");
+const { OAuth2Client } = require("google-auth-library");
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Setup Nodemailer transporter
 let transporter;
@@ -274,6 +276,7 @@ router.post("/verify-otp", async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     };
 
@@ -348,6 +351,7 @@ router.post("/login", async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     };
 
@@ -360,6 +364,59 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST /api/auth/google
+router.post("/google", async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ success: false, message: "No credential provided" });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { email, name } = payload;
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      // Create new user, without password, auto-verified
+      user = new User({
+        name,
+        email,
+        isVerified: true,
+      });
+      await user.save();
+    } else if (!user.isVerified) {
+      // If user exists but is not verified, verify them
+      user.isVerified = true;
+      await user.save();
+    }
+
+    // Generate JWT
+    const jwtPayload = {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    };
+
+    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
+
+    jwt.sign(jwtPayload, secret, { expiresIn: "7d" }, (err, token) => {
+      if (err) throw err;
+      res.json({ success: true, token, user: jwtPayload.user });
+    });
+  } catch (err) {
+    console.error("Google Auth Error:", err.message);
+    res.status(500).json({ success: false, message: "Authentication failed" });
   }
 });
 

@@ -4,12 +4,13 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, trim: true, lowercase: true },
-    password: { type: String, required: true },
+    password: { type: String, required: false },
     isVerified: { type: Boolean, default: false },
     otp: { type: String },
     otpExpires: { type: Date },
     resetPasswordOtp: { type: String },
     resetPasswordExpires: { type: Date },
+    role: { type: String, enum: ["user", "admin"], default: "user" },
   },
   { timestamps: true }
 );

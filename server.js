@@ -18,6 +18,8 @@ app.use(express.json());
 app.use("/api/products", productRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/users", require("./routes/users"));
+app.use("/api/settings", require("./routes/settings"));
 
 // Health check
 app.get("/", (req, res) => {
