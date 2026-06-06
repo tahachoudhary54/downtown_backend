@@ -20,10 +20,20 @@ app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/users", require("./routes/users"));
 app.use("/api/settings", require("./routes/settings"));
+app.use("/api/orders", require("./routes/orders"));
+app.use("/api/stats", require("./routes/stats"));
+app.use("/api/notifications", require("./routes/notifications"));
+app.use("/api/tickets", require("./routes/tickets"));
 
 // Health check
 app.get("/", (req, res) => {
   res.json({ message: "Downtown Boutique API is running!" });
+});
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error("Global error handler caught:", err);
+  res.status(500).json({ success: false, message: err.message || "Internal Server Error" });
 });
 
 // Connect to MongoDB and start server

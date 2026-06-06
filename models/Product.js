@@ -11,6 +11,7 @@ const productSchema = new mongoose.Schema(
     isOnSale: { type: Boolean, default: false },
     originalPrice: { type: String },
     inStock: { type: Boolean, default: true },
+    sizes: [{ type: String }],
   },
   { timestamps: true }
 );

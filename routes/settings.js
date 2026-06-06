@@ -31,6 +31,9 @@ router.put("/", auth, adminOnly, async (req, res) => {
     // Update fields
     if (req.body.hero) settings.hero = { ...settings.hero.toObject(), ...req.body.hero };
     if (req.body.seasonalBanner) settings.seasonalBanner = { ...settings.seasonalBanner.toObject(), ...req.body.seasonalBanner };
+    if (req.body.categories) settings.categories = req.body.categories;
+    if (req.body.store) settings.store = { ...settings.store.toObject(), ...req.body.store };
+    if (req.body.whatsapp) settings.whatsapp = { ...settings.whatsapp?.toObject?.() || settings.whatsapp || {}, ...req.body.whatsapp };
 
     await settings.save();
     res.json({ success: true, data: settings });
