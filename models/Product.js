@@ -11,6 +11,13 @@ const productSchema = new mongoose.Schema(
     isOnSale: { type: Boolean, default: false },
     originalPrice: { type: String },
     inStock: { type: Boolean, default: true },
+    sku: { type: String, default: "" },
+    inventory: {
+      type: Map,
+      of: Number,
+      default: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 }
+    },
+    totalStock: { type: Number, default: 0 },
     sizes: [{ type: String }],
   },
   { timestamps: true }
