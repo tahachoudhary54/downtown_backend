@@ -77,11 +77,11 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
     if (io) {
       io.emit("stock_updated", {
         productId: product._id,
-        totalStock: product.totalStock,
+        stock: product.stock,
         inStock: product.inStock,
         inventory: product.inventory
       });
-      console.log(`📡 Emitted stock_updated for ${product.name}: ${product.totalStock} left (Admin Edit)`);
+      console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left (Admin Edit)`);
     }
 
     res.json({ success: true, data: product });

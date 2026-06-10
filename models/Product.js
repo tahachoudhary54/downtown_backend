@@ -17,7 +17,9 @@ const productSchema = new mongoose.Schema(
       of: Number,
       default: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 }
     },
-    totalStock: { type: Number, default: 0 },
+    stock: { type: Number, default: 0 },
+    soldCount: { type: Number, default: 0 },
+    lowStockThreshold: { type: Number, default: 5 },
     sizes: [{ type: String }],
   },
   { timestamps: true }

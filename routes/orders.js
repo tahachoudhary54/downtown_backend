@@ -18,8 +18,8 @@ router.post("/", async (req, res) => {
       if (!product) {
         return res.status(400).json({ success: false, message: `Product ${item.name} not found.` });
       }
-      if (!product.inStock || product.totalStock < item.quantity) {
-        return res.status(400).json({ success: false, message: `Insufficient stock for ${product.name}. Only ${product.totalStock} left.` });
+      if (!product.inStock || product.stock < item.quantity) {
+        return res.status(400).json({ success: false, message: `Insufficient stock for ${product.name}. Only ${product.stock} left.` });
       }
       if (product.inventory && product.inventory.has(item.size)) {
         const sizeStock = product.inventory.get(item.size) || 0;
@@ -46,8 +46,9 @@ router.post("/", async (req, res) => {
     for (const item of items) {
       const product = await Product.findById(item.product);
       if (product) {
-        // Decrease total stock
-        product.totalStock = Math.max(0, product.totalStock - item.quantity);
+        // Decrease total stock and increment soldCount
+        product.stock = Math.max(0, product.stock - item.quantity);
+        product.soldCount = (product.soldCount || 0) + item.quantity;
         
         // Decrease specific size inventory if present
         if (product.inventory && product.inventory.has(item.size)) {
@@ -56,7 +57,7 @@ router.post("/", async (req, res) => {
         }
 
         // Update inStock flag
-        if (product.totalStock === 0) {
+        if (product.stock === 0) {
           product.inStock = false;
         }
 
@@ -67,24 +68,32 @@ router.post("/", async (req, res) => {
         if (io) {
           io.emit("stock_updated", {
             productId: product._id,
-            totalStock: product.totalStock,
+            stock: product.stock,
             inStock: product.inStock,
             inventory: product.inventory
           });
-          console.log(`📡 Emitted stock_updated for ${product.name}: ${product.totalStock} left`);
+          console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left`);
         }
 
         // Check for low stock alert
-        if (product.totalStock <= 10) {
+        const threshold = product.lowStockThreshold || 5;
+        if (product.stock <= threshold) {
           const admins = await User.find({ role: "admin" });
           const notifications = admins.map(admin => ({
             userId: admin._id,
             title: "Low Stock Alert",
-            message: `Product "${product.name}" is running low. Only ${product.totalStock} left in stock.`,
+            message: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
             type: "stock_alert"
           }));
           if (notifications.length > 0) {
             await Notification.insertMany(notifications);
+            if (io) {
+              io.emit("admin_notification", {
+                title: "Low Stock Alert",
+                desc: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
+                type: "alert"
+              });
+            }
           }
         }
       }
@@ -135,6 +144,41 @@ router.get("/myorders", auth, async (req, res) => {
 router.put("/:id/status", auth, adminOnly, async (req, res) => {
   try {
     const { orderStatus } = req.body;
+    
+    // If cancelling, restore stock
+    if (orderStatus === "Cancelled") {
+      const existingOrder = await Order.findById(req.params.id);
+      if (!existingOrder) return res.status(404).json({ success: false, message: "Order not found" });
+      
+      // Only restore if it wasn't already cancelled
+      if (existingOrder.orderStatus !== "Cancelled") {
+        for (const item of existingOrder.items) {
+          const product = await Product.findById(item.product);
+          if (product) {
+            product.stock += item.quantity;
+            product.soldCount = Math.max(0, (product.soldCount || 0) - item.quantity);
+            if (product.inventory && product.inventory.has(item.size)) {
+              product.inventory.set(item.size, (product.inventory.get(item.size) || 0) + item.quantity);
+            }
+            if (product.stock > 0) {
+              product.inStock = true;
+            }
+            await product.save();
+            
+            const io = req.app.get("io");
+            if (io) {
+              io.emit("stock_updated", {
+                productId: product._id,
+                stock: product.stock,
+                inStock: product.inStock,
+                inventory: product.inventory
+              });
+            }
+          }
+        }
+      }
+    }
+
     const order = await Order.findByIdAndUpdate(
       req.params.id,
       { orderStatus },
