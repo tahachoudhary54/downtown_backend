@@ -5,11 +5,29 @@ const { auth, adminOnly } = require("../middleware/authMiddleware");
 const whatsappService = require("../services/whatsappService");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
+const Product = require("../models/Product");
 
 // POST /api/orders - Create a new order
 router.post("/", async (req, res) => {
   try {
     const { user, customer, shippingAddress, items, financials, paymentMethod } = req.body;
+
+    // Validate stock before creating order
+    for (const item of items) {
+      const product = await Product.findById(item.product);
+      if (!product) {
+        return res.status(400).json({ success: false, message: `Product ${item.name} not found.` });
+      }
+      if (!product.inStock || product.totalStock < item.quantity) {
+        return res.status(400).json({ success: false, message: `Insufficient stock for ${product.name}. Only ${product.totalStock} left.` });
+      }
+      if (product.inventory && product.inventory.has(item.size)) {
+        const sizeStock = product.inventory.get(item.size) || 0;
+        if (sizeStock < item.quantity) {
+          return res.status(400).json({ success: false, message: `Insufficient stock for ${product.name} (Size: ${item.size}). Only ${sizeStock} left.` });
+        }
+      }
+    }
 
     const order = new Order({
       user,
@@ -23,6 +41,54 @@ router.post("/", async (req, res) => {
     });
 
     await order.save();
+
+    // Deduct stock and check for low stock
+    for (const item of items) {
+      const product = await Product.findById(item.product);
+      if (product) {
+        // Decrease total stock
+        product.totalStock = Math.max(0, product.totalStock - item.quantity);
+        
+        // Decrease specific size inventory if present
+        if (product.inventory && product.inventory.has(item.size)) {
+          const currentSizeStock = product.inventory.get(item.size) || 0;
+          product.inventory.set(item.size, Math.max(0, currentSizeStock - item.quantity));
+        }
+
+        // Update inStock flag
+        if (product.totalStock === 0) {
+          product.inStock = false;
+        }
+
+        await product.save();
+
+        // Emit real-time stock update
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("stock_updated", {
+            productId: product._id,
+            totalStock: product.totalStock,
+            inStock: product.inStock,
+            inventory: product.inventory
+          });
+          console.log(`📡 Emitted stock_updated for ${product.name}: ${product.totalStock} left`);
+        }
+
+        // Check for low stock alert
+        if (product.totalStock <= 10) {
+          const admins = await User.find({ role: "admin" });
+          const notifications = admins.map(admin => ({
+            userId: admin._id,
+            title: "Low Stock Alert",
+            message: `Product "${product.name}" is running low. Only ${product.totalStock} left in stock.`,
+            type: "stock_alert"
+          }));
+          if (notifications.length > 0) {
+            await Notification.insertMany(notifications);
+          }
+        }
+      }
+    }
 
     // Create website notification for customer (if logged in)
     if (user) {

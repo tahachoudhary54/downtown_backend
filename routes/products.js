@@ -71,6 +71,19 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
       runValidators: true,
     });
     if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+
+    // Emit real-time stock update
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("stock_updated", {
+        productId: product._id,
+        totalStock: product.totalStock,
+        inStock: product.inStock,
+        inventory: product.inventory
+      });
+      console.log(`📡 Emitted stock_updated for ${product.name}: ${product.totalStock} left (Admin Edit)`);
+    }
+
     res.json({ success: true, data: product });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
