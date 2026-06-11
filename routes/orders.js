@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Order = require("../models/Order");
 const { auth, adminOnly } = require("../middleware/authMiddleware");
-const whatsappService = require("../services/whatsappService");
+
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 const Product = require("../models/Product");
@@ -111,8 +111,7 @@ router.post("/", async (req, res) => {
       });
     }
     
-    // Trigger WhatsApp notification asynchronously (do not await, so user isn't blocked if Twilio is slow)
-    whatsappService.sendAdminOrderAlert(order).catch(err => console.error("WhatsApp trigger error:", err));
+
 
     res.status(201).json({ success: true, data: order });
   } catch (err) {

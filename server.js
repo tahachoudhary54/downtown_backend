@@ -43,7 +43,7 @@ app.use("/api/orders", require("./routes/orders"));
 app.use("/api/stats", require("./routes/stats"));
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/tickets", require("./routes/tickets"));
-
+app.use("/api/policies", require("./routes/policies"));
 // Health check
 app.get("/", (req, res) => {
   res.json({ message: "Downtown Boutique API is running!" });

@@ -30,24 +30,6 @@ const settingsSchema = new mongoose.Schema(
         displayOrder: { type: Number, default: 0 }
       }],
       default: []
-    },
-    store: {
-      storeName: { type: String, default: "Downtown Boutique" },
-      contactEmail: { type: String, default: "support@downtownboutique.com" },
-      phoneNumber: { type: String, default: "+1 (555) 123-4567" },
-      currency: { type: String, default: "USD" },
-      flatShippingRate: { type: Number, default: 15.00 },
-      socialLinks: {
-        instagram: { type: String, default: "https://www.instagram.com/downtown_boutique_kurla/" },
-        facebook: { type: String, default: "" },
-        twitter: { type: String, default: "" }
-      }
-    },
-    whatsapp: {
-      enabled: { type: Boolean, default: false },
-      adminNumber: { type: String, default: "" },
-      sendCustomerConfirmation: { type: Boolean, default: false },
-      sendStatusUpdates: { type: Boolean, default: false }
     }
   },
   { timestamps: true }

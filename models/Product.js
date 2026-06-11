@@ -15,7 +15,7 @@ const productSchema = new mongoose.Schema(
     inventory: {
       type: Map,
       of: Number,
-      default: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 }
+      default: { S: 0, M: 0, L: 0, XL: 0, XXL: 0, '3XL': 0 }
     },
     stock: { type: Number, default: 0 },
     soldCount: { type: Number, default: 0 },
