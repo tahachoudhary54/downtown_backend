@@ -41,6 +41,13 @@ router.put("/", auth, adminOnly, async (req, res) => {
     });
 
     await policy.save();
+
+    // Emit real-time policy update
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("policies_updated", policy);
+    }
+
     res.json({ success: true, data: policy });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

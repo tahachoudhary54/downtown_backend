@@ -1,0 +1,1 @@
+require('mongoose').connect('mongodb+srv://tahachoudhary54_db_user:downtown123@cluster0.ckmcuds.mongodb.net/?appName=Cluster0').then(async () => { await require('./models/Product').updateMany({name: /Classic Polo/i}, {$set: {inStock: true}}); console.log('Updated'); process.exit(); })

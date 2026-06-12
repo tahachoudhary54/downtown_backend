@@ -25,12 +25,13 @@ const orderSchema = new mongoose.Schema(
     ],
     financials: {
       subtotal: { type: Number, required: true },
-      shippingCost: { type: Number, required: true },
+      shippingCost: { type: Number, default: 0 },
       total: { type: Number, required: true },
     },
+    deliveryCharge: { type: Number, default: null },
     paymentMethod: { type: String, required: true }, // 'upi' or 'netbanking'
     paymentStatus: { type: String, default: 'Pending' }, // 'Pending', 'Paid', 'Failed'
-    orderStatus: { type: String, default: 'Processing' }, // 'Processing', 'Shipped', 'Delivered'
+    orderStatus: { type: String, default: 'Pending Delivery Quote' }, // 'Pending Delivery Quote', 'Waiting for Customer Confirmation', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'
   },
   { timestamps: true }
 );

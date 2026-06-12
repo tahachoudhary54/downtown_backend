@@ -18,7 +18,10 @@ router.post("/", async (req, res) => {
       if (!product) {
         return res.status(400).json({ success: false, message: `Product ${item.name} not found.` });
       }
-      if (!product.inStock || product.stock < item.quantity) {
+      if (!product.inStock) {
+        return res.status(400).json({ success: false, message: `Product ${product.name} is currently unavailable for purchase.` });
+      }
+      if (product.stock < item.quantity) {
         return res.status(400).json({ success: false, message: `Insufficient stock for ${product.name}. Only ${product.stock} left.` });
       }
       if (product.inventory && product.inventory.has(item.size)) {
@@ -37,7 +40,7 @@ router.post("/", async (req, res) => {
       financials,
       paymentMethod,
       paymentStatus: "Paid", // Mocking success immediately for now
-      orderStatus: "Processing"
+      orderStatus: "Pending Delivery Quote"
     });
 
     await order.save();
@@ -230,12 +233,201 @@ router.put("/:id/status", auth, adminOnly, async (req, res) => {
   }
 });
 
-// DELETE /api/orders/:id - Admin delete order
-router.delete("/:id", auth, adminOnly, async (req, res) => {
+// DELETE /api/orders/:id - Admin or Owner delete order
+router.delete("/:id", auth, async (req, res) => {
   try {
-    const order = await Order.findByIdAndDelete(req.params.id);
+    const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+    const isAdmin = req.user && req.user.role === "admin";
+    if (!isAdmin && (!order.user || order.user.toString() !== req.user.id)) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    // Restore stock if it wasn't already cancelled
+    if (order.orderStatus !== "Cancelled") {
+      for (const item of order.items) {
+        const product = await Product.findById(item.product);
+        if (product) {
+          product.stock += item.quantity;
+          product.soldCount = Math.max(0, (product.soldCount || 0) - item.quantity);
+          if (product.inventory && product.inventory.has(item.size)) {
+            product.inventory.set(item.size, (product.inventory.get(item.size) || 0) + item.quantity);
+          }
+          if (product.stock > 0) {
+            product.inStock = true;
+          }
+          await product.save();
+          
+          const io = req.app.get("io");
+          if (io) {
+            io.emit("stock_updated", {
+              productId: product._id,
+              stock: product.stock,
+              inStock: product.inStock,
+              inventory: product.inventory
+            });
+          }
+        }
+      }
+    }
+
+    await Order.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: "Order deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/orders/:id/delivery-quote - Admin set delivery charge
+router.put("/:id/delivery-quote", auth, adminOnly, async (req, res) => {
+  try {
+    const { deliveryCharge } = req.body;
+    if (deliveryCharge === undefined || deliveryCharge === null) {
+      return res.status(400).json({ success: false, message: "Delivery charge is required." });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+    order.deliveryCharge = Number(deliveryCharge);
+    order.orderStatus = "Waiting for Customer Confirmation";
+    // Optional: add to financials total
+    order.financials.shippingCost = Number(deliveryCharge);
+    order.financials.total = order.financials.subtotal + Number(deliveryCharge);
+
+    await order.save();
+
+    // Create notification for customer
+    let userIdForNotification = order.user;
+    if (!userIdForNotification && order.customer && order.customer.email) {
+      const user = await User.findOne({ email: order.customer.email }).select('_id').lean();
+      if (user) userIdForNotification = user._id;
+    }
+
+    if (userIdForNotification) {
+      await Notification.create({
+        userId: userIdForNotification,
+        orderId: order._id,
+        title: "Delivery Quote Received",
+        message: `Your delivery charge is ₹${deliveryCharge}. Please confirm to proceed.`,
+        type: "delivery_quote"
+      });
+    }
+
+    res.json({ success: true, data: order });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/orders/:id/confirm-delivery - Customer confirm delivery
+router.put("/:id/confirm-delivery", auth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+    if (order.user && order.user.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    order.orderStatus = "Confirmed";
+    await order.save();
+
+    // Notify admins
+    const admins = await User.find({ role: "admin" });
+    const notifications = admins.map(admin => ({
+      userId: admin._id,
+      orderId: order._id,
+      title: "Delivery Charge Confirmed",
+      message: `Customer confirmed delivery charge for order #${order._id.toString().slice(-6).toUpperCase()}. Ready for dispatch.`,
+      type: "order_confirmed"
+    }));
+    
+    if (notifications.length > 0) {
+      await Notification.insertMany(notifications);
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("admin_notification", {
+          title: "Delivery Charge Confirmed",
+          desc: `Order #${order._id.toString().slice(-6).toUpperCase()} is ready for dispatch.`,
+          type: "order_confirmed"
+        });
+      }
+    }
+
+    res.json({ success: true, data: order });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/orders/:id/cancel - Customer cancel order
+router.put("/:id/cancel", auth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+    if (order.user && order.user.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    if (order.orderStatus === "Cancelled") {
+       return res.status(400).json({ success: false, message: "Order is already cancelled" });
+    }
+
+    order.orderStatus = "Cancelled";
+    await order.save();
+
+    // Restore stock
+    for (const item of order.items) {
+      const product = await Product.findById(item.product);
+      if (product) {
+        product.stock += item.quantity;
+        product.soldCount = Math.max(0, (product.soldCount || 0) - item.quantity);
+        if (product.inventory && product.inventory.has(item.size)) {
+          product.inventory.set(item.size, (product.inventory.get(item.size) || 0) + item.quantity);
+        }
+        if (product.stock > 0) {
+          product.inStock = true;
+        }
+        await product.save();
+        
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("stock_updated", {
+            productId: product._id,
+            stock: product.stock,
+            inStock: product.inStock,
+            inventory: product.inventory
+          });
+        }
+      }
+    }
+
+    // Notify admins
+    const admins = await User.find({ role: "admin" });
+    const notifications = admins.map(admin => ({
+      userId: admin._id,
+      orderId: order._id,
+      title: "Order Cancelled",
+      message: `Customer cancelled order #${order._id.toString().slice(-6).toUpperCase()}.`,
+      type: "order_cancelled"
+    }));
+    
+    if (notifications.length > 0) {
+      await Notification.insertMany(notifications);
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("admin_notification", {
+          title: "Order Cancelled",
+          desc: `Order #${order._id.toString().slice(-6).toUpperCase()} was cancelled.`,
+          type: "order_cancelled"
+        });
+      }
+    }
+
+    res.json({ success: true, data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
