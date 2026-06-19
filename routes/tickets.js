@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Ticket = require("../models/Ticket");
 const Notification = require("../models/Notification");
+const User = require("../models/User");
 const { auth, adminOnly } = require("../middleware/authMiddleware");
 
 // POST /api/tickets - Customer creates a new ticket
@@ -27,7 +28,26 @@ router.post("/", auth, async (req, res) => {
 
     await ticket.save();
 
-    // Trigger Admin Notification (currently handled locally in Admin panel but if we implement a backend global admin channel, do it here)
+    // Trigger Admin Notification
+    const admins = await User.find({ role: "admin" });
+    const notifications = admins.map(admin => ({
+      userId: admin._id,
+      title: "New Support Ticket",
+      message: `A new ticket "${subject}" has been submitted.`,
+      type: "new_ticket"
+    }));
+    
+    if (notifications.length > 0) {
+      await Notification.insertMany(notifications);
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("admin_notification", {
+          title: "New Support Ticket",
+          desc: `A new ticket "${subject}" has been submitted.`,
+          type: "ticket"
+        });
+      }
+    }
 
     res.status(201).json({ success: true, data: ticket });
   } catch (err) {
@@ -108,6 +128,26 @@ router.put("/:id/reply", auth, async (req, res) => {
         message: `Admin replied to your ticket #${ticketIdDisplay}.`,
         type: "ticket_reply"
       });
+    } else {
+      const ticketIdDisplay = ticket._id.toString().slice(-6).toUpperCase();
+      const admins = await User.find({ role: "admin" });
+      const notifications = admins.map(admin => ({
+        userId: admin._id,
+        title: "Ticket Reply Received",
+        message: `Customer replied to ticket #${ticketIdDisplay}.`,
+        type: "ticket_reply"
+      }));
+      if (notifications.length > 0) {
+        await Notification.insertMany(notifications);
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("admin_notification", {
+            title: "Ticket Reply Received",
+            desc: `Customer replied to ticket #${ticketIdDisplay}.`,
+            type: "ticket"
+          });
+        }
+      }
     }
 
     res.json({ success: true, data: ticket });

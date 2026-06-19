@@ -18,7 +18,8 @@ router.get("/", async (req, res) => {
       ];
     }
     if (category) {
-      filter.category = { $regex: category, $options: "i" };
+      const relaxedCategory = category.replace(/[- ]/g, '[- ]');
+      filter.category = { $regex: `^${relaxedCategory}$`, $options: "i" };
     }
     if (sale === "true") {
       filter.isOnSale = true;
