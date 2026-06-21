@@ -4,6 +4,9 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
+const compression = require("compression");
+const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
 
 const productRoutes = require("./routes/products");
 const authRoutes = require("./routes/auth");
@@ -30,10 +33,22 @@ io.on("connection", (socket) => {
 });
 
 // Middleware
+app.use(helmet());
+app.use(compression());
+
+// Global Rate Limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Limit each IP to 1000 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests, please try again later." }
+});
+app.use("/api", limiter);
+
 app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Routes
 app.use("/api/products", productRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);
@@ -43,6 +58,7 @@ app.use("/api/orders", require("./routes/orders"));
 app.use("/api/stats", require("./routes/stats"));
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/tickets", require("./routes/tickets"));
+app.use("/api/categories", require("./routes/categories"));
 app.use("/api/policies", require("./routes/policies"));
 app.use("/api/analytics", require("./routes/analytics"));
 // Health check

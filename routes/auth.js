@@ -35,8 +35,10 @@ const sendOtpEmail = async (email, otp) => {
   const fromAddress = process.env.EMAIL_USER || "no-reply@localhost";
   const mailOptions = {
     from: `"Downtown Boutique" <${fromAddress}>`,
+    replyTo: fromAddress,
     to: email,
     subject: "Your Verification Code - Downtown Boutique",
+    text: `Your Verification Code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you didn't create an account, please ignore this email.`,
     html: `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -430,8 +432,10 @@ const sendResetPasswordEmail = async (email, otp) => {
   const fromAddress = process.env.EMAIL_USER || "no-reply@localhost";
   const mailOptions = {
     from: `"Downtown Boutique" <${fromAddress}>`,
+    replyTo: fromAddress,
     to: email,
     subject: "Reset Your Password - Downtown Boutique",
+    text: `Your Password Reset Code is: ${otp}\n\nThis code expires in 15 minutes.\n\nIf you didn't request a password reset, you can safely ignore this email.`,
     html: `<!DOCTYPE html>
 <html lang="en">
 <head>

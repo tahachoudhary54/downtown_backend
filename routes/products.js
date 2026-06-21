@@ -2,18 +2,25 @@ const express = require("express");
 const router = express.Router();
 const Product = require("../models/Product");
 const { auth, adminOnly } = require("../middleware/authMiddleware");
+const NodeCache = require("node-cache");
+
+const productCache = new NodeCache({ stdTTL: 300, checkperiod: 320 }); // 5 minutes cache
 
 // GET all products (with optional search query)
 router.get("/", async (req, res) => {
   try {
-    const { search, category, sale } = req.query;
+    const cacheKey = req.originalUrl;
+    if (productCache.has(cacheKey)) {
+      return res.json(productCache.get(cacheKey));
+    }
+
+    const { search, category, sale, minPrice, maxPrice } = req.query;
     let filter = {};
 
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
         { category: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
         { sku: { $regex: search, $options: "i" } },
       ];
     }
@@ -24,6 +31,12 @@ router.get("/", async (req, res) => {
     if (sale === "true") {
       filter.isOnSale = true;
     }
+    
+    if (minPrice || maxPrice) {
+      filter.priceValue = {};
+      if (minPrice) filter.priceValue.$gte = Number(minPrice);
+      if (maxPrice) filter.priceValue.$lte = Number(maxPrice);
+    }
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -32,11 +45,27 @@ router.get("/", async (req, res) => {
     const total = await Product.countDocuments(filter);
     const products = await Product.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit);
 
-    res.json({ 
+    // Calculate category counts independent of the current category filter
+    const baseFilter = { ...filter };
+    delete baseFilter.category;
+    const countsAggr = await Product.aggregate([
+      { $match: baseFilter },
+      { $group: { _id: "$category", count: { $sum: 1 } } }
+    ]);
+    const categoryCounts = {};
+    countsAggr.forEach(c => {
+      if (c._id) categoryCounts[c._id.toLowerCase()] = c.count;
+    });
+
+    const responseData = { 
       success: true, 
       data: products, 
+      categoryCounts,
       pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } 
-    });
+    };
+    
+    productCache.set(cacheKey, responseData);
+    res.json(responseData);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -58,6 +87,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
   try {
     const product = new Product(req.body);
     await product.save();
+    productCache.flushAll(); // Invalidate cache
     res.status(201).json({ success: true, data: product });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -85,6 +115,7 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
       console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left (Admin Edit)`);
     }
 
+    productCache.flushAll(); // Invalidate cache
     res.json({ success: true, data: product });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -96,6 +127,7 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+    productCache.flushAll(); // Invalidate cache
     res.json({ success: true, message: "Product deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
