@@ -82,7 +82,7 @@ app.use((err, req, res, next) => {
 // Connect to MongoDB and start server
 const startServer = () => {
   server.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 };
 
