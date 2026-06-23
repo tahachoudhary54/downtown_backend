@@ -645,12 +645,8 @@ router.post("/passwordless-request", async (req, res) => {
     }
     await user.save();
 
-    const emailResult = await sendOtpEmail(user.email, otp);
-    const responsePayload = { success: true, message: "OTP sent to your email" };
-    if (emailResult && emailResult.previewUrl) {
-      responsePayload.previewUrl = emailResult.previewUrl;
-    }
-    res.json(responsePayload);
+    sendOtpEmail(user.email, otp).catch(err => console.error("OTP email error:", err));
+    res.json({ success: true, message: "OTP sent to your email" });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ success: false, message: "Server error" });
