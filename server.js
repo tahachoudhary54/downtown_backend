@@ -16,10 +16,13 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const server = http.createServer(app);
+const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"]
+    origin: frontendUrl,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
   }
 });
 
@@ -46,7 +49,10 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
-app.use(cors({ origin: true }));
+app.use(cors({ 
+  origin: frontendUrl,
+  credentials: true 
+}));
 app.use(express.json());
 
 app.use("/api/products", productRoutes);
