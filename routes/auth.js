@@ -621,5 +621,76 @@ router.post("/reset-password", async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
+// POST /api/auth/passwordless-request
+router.post("/passwordless-request", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: "Email required" });
+
+    let user = await User.findOne({ email });
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 15 * 60 * 1000);
+
+    if (!user) {
+      user = new User({
+        name: email.split("@")[0],
+        email,
+        isVerified: false,
+        otp,
+        otpExpires
+      });
+    } else {
+      user.otp = otp;
+      user.otpExpires = otpExpires;
+    }
+    await user.save();
+
+    const emailResult = await sendOtpEmail(user.email, otp);
+    const responsePayload = { success: true, message: "OTP sent to your email" };
+    if (emailResult && emailResult.previewUrl) {
+      responsePayload.previewUrl = emailResult.previewUrl;
+    }
+    res.json(responsePayload);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST /api/auth/passwordless-verify
+router.post("/passwordless-verify", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) return res.status(400).json({ success: false, message: "Email and OTP required" });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    if (user.otp !== otp) return res.status(400).json({ success: false, message: "Invalid OTP" });
+    if (user.otpExpires < new Date()) return res.status(400).json({ success: false, message: "OTP has expired" });
+
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
+
+    const payload = {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    };
+    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
+    jwt.sign(payload, secret, { expiresIn: "7d" }, (err, token) => {
+      if (err) throw err;
+      res.json({ success: true, token, user: payload.user });
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
 module.exports = router;
