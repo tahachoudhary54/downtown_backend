@@ -7,9 +7,8 @@ const { auth, adminOnly } = require("../middleware/authMiddleware");
 // GET all categories
 router.get("/", async (req, res) => {
   try {
-    const { activeOnly } = req.query;
-    const filter = activeOnly === 'true' ? { isActive: true } : {};
-    const categories = await Category.find(filter).sort({ displayOrder: 1, name: 1 });
+    const filter = {};
+    const categories = await Category.find(filter).sort({ name: 1 });
     res.json({ success: true, data: categories });
   } catch (error) {
     console.error("Fetch categories error:", error);
@@ -20,7 +19,7 @@ router.get("/", async (req, res) => {
 // POST add new category (Admin)
 router.post("/", auth, adminOnly, async (req, res) => {
   try {
-    const { name, slug, img, isActive, displayOrder } = req.body;
+    const { name, slug } = req.body;
     
     // Check if category exists
     const exists = await Category.findOne({ $or: [{ name }, { slug }] });
@@ -28,7 +27,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ success: false, message: "Category with this name or slug already exists." });
     }
 
-    const newCategory = new Category({ name, slug, img, isActive, displayOrder });
+    const newCategory = new Category({ name, slug });
     await newCategory.save();
     res.status(201).json({ success: true, data: newCategory });
   } catch (error) {
@@ -40,7 +39,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
 // PUT edit category (Admin)
 router.put("/:id", auth, adminOnly, async (req, res) => {
   try {
-    const { name, slug, img, isActive, displayOrder } = req.body;
+    const { name, slug } = req.body;
     
     // Check for conflicts
     const exists = await Category.findOne({ 
@@ -54,7 +53,7 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
 
     const updated = await Category.findByIdAndUpdate(
       req.params.id, 
-      { name, slug, img, isActive, displayOrder }, 
+      { name, slug }, 
       { new: true }
     );
     

@@ -57,11 +57,19 @@ router.get("/", async (req, res) => {
       if (c._id) categoryCounts[c._id.toLowerCase()] = c.count;
     });
 
+    const totalPages = Math.ceil(total / limit);
     const responseData = { 
       success: true, 
       data: products, 
       categoryCounts,
-      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } 
+      pagination: { 
+        totalProducts: total, 
+        currentPage: page, 
+        limit, 
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
+      } 
     };
     
     productCache.set(cacheKey, responseData);
@@ -110,7 +118,8 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
         productId: product._id,
         stock: product.stock,
         inStock: product.inStock,
-        inventory: product.inventory
+        inventory: product.inventory,
+        variants: product.variants
       });
       console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left (Admin Edit)`);
     }
@@ -127,6 +136,18 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+    
+    const io = req.app.get('socketio');
+    if (io) {
+      io.emit("stock_updated", {
+        productId: product._id,
+        stock: 0,
+        inStock: false,
+        inventory: {},
+        variants: []
+      });
+    }
+
     productCache.flushAll(); // Invalidate cache
     res.json({ success: true, message: "Product deleted" });
   } catch (err) {

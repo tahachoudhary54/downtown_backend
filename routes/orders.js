@@ -12,9 +12,18 @@ router.post("/", async (req, res) => {
   try {
     const { user, customer, shippingAddress, items, financials, paymentMethod } = req.body;
 
+    // Fetch all products involved in the order at once
+    const productIds = [...new Set(items.map(item => item.product.toString()))];
+    const productsArray = await Product.find({ _id: { $in: productIds } });
+    
+    // Map products for quick lookup
+    const productsMap = new Map();
+    productsArray.forEach(p => productsMap.set(p._id.toString(), p));
+
     // Validate stock before creating order
     for (const item of items) {
-      const product = await Product.findById(item.product);
+      const productIdStr = item.product.toString();
+      const product = productsMap.get(productIdStr);
       if (!product) {
         return res.status(400).json({ success: false, message: `Product ${item.name} not found.` });
       }
@@ -46,8 +55,13 @@ router.post("/", async (req, res) => {
     await order.save();
 
     // Deduct stock and check for low stock
+    let admins = null;
+    let notificationsToInsert = [];
+    const io = req.app.get("io");
+
     for (const item of items) {
-      const product = await Product.findById(item.product);
+      const productIdStr = item.product.toString();
+      const product = productsMap.get(productIdStr);
       if (product) {
         // Decrease total stock and increment soldCount
         product.stock = Math.max(0, product.stock - item.quantity);
@@ -64,42 +78,50 @@ router.post("/", async (req, res) => {
           product.inStock = false;
         }
 
-        await product.save();
-
-        // Emit real-time stock update
-        const io = req.app.get("io");
-        if (io) {
-          io.emit("stock_updated", {
-            productId: product._id,
-            stock: product.stock,
-            inStock: product.inStock,
-            inventory: product.inventory
-          });
-          console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left`);
-        }
-
         // Check for low stock alert
         const threshold = product.lowStockThreshold || 5;
         if (product.stock <= threshold) {
-          const admins = await User.find({ role: "admin" });
-          const notifications = admins.map(admin => ({
-            userId: admin._id,
-            title: "Low Stock Alert",
-            message: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
-            type: "stock_alert"
-          }));
-          if (notifications.length > 0) {
-            await Notification.insertMany(notifications);
-            if (io) {
-              io.emit("admin_notification", {
-                title: "Low Stock Alert",
-                desc: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
-                type: "alert"
-              });
-            }
+          if (!admins) {
+            admins = await User.find({ role: "admin" });
+          }
+          admins.forEach(admin => {
+            notificationsToInsert.push({
+              userId: admin._id,
+              title: "Low Stock Alert",
+              message: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
+              type: "stock_alert"
+            });
+          });
+          if (io) {
+            io.emit("admin_notification", {
+              title: "Low Stock Alert",
+              desc: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
+              type: "alert"
+            });
           }
         }
       }
+    }
+
+    // Save all updated products in parallel
+    await Promise.all(Array.from(productsMap.values()).map(async (product) => {
+      await product.save();
+      // Emit real-time stock update
+      if (io) {
+        io.emit("stock_updated", {
+          productId: product._id,
+          stock: product.stock,
+          inStock: product.inStock,
+          inventory: product.inventory,
+          variants: product.variants
+        });
+        console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left`);
+      }
+    }));
+
+    // Insert all notifications in bulk
+    if (notificationsToInsert.length > 0) {
+      await Notification.insertMany(notificationsToInsert);
     }
 
     // Create website notification for customer (if logged in)
@@ -113,8 +135,6 @@ router.post("/", async (req, res) => {
         type: "order_placed"
       });
     }
-    
-
 
     res.status(201).json({ success: true, data: order });
   } catch (err) {
@@ -173,7 +193,8 @@ router.put("/:id/status", auth, adminOnly, async (req, res) => {
                 productId: product._id,
                 stock: product.stock,
                 inStock: product.inStock,
-                inventory: product.inventory
+                inventory: product.inventory,
+                variants: product.variants
               });
             }
           }
@@ -265,7 +286,8 @@ router.delete("/:id", auth, async (req, res) => {
               productId: product._id,
               stock: product.stock,
               inStock: product.inStock,
-              inventory: product.inventory
+              inventory: product.inventory,
+              variants: product.variants
             });
           }
         }
@@ -399,7 +421,8 @@ router.put("/:id/cancel", auth, async (req, res) => {
             productId: product._id,
             stock: product.stock,
             inStock: product.inStock,
-            inventory: product.inventory
+            inventory: product.inventory,
+            variants: product.variants
           });
         }
       }

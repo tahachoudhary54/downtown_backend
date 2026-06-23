@@ -21,6 +21,22 @@ const productSchema = new mongoose.Schema(
     soldCount: { type: Number, default: 0 },
     lowStockThreshold: { type: Number, default: 5 },
     sizes: [{ type: String }],
+    colors: [{ type: String }],
+    variants: [{
+      colorName: { type: String, required: true },
+      variantName: { type: String },
+      images: [{ type: String }],
+      stock: { type: Number, default: 0 },
+      sizes: [{ type: String }],
+      sizeInventory: { type: Map, of: Number, default: {} }
+    }],
+    averageRating: { type: Number, default: 0 },
+    reviewCount: { type: Number, default: 0 },
+    ratingDistribution: {
+      type: Map,
+      of: Number,
+      default: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }
+    }
   },
   { timestamps: true }
 );
