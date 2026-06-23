@@ -26,7 +26,17 @@ router.get("/", async (req, res) => {
     }
     if (category) {
       const relaxedCategory = category.replace(/[- ]/g, '[- ]');
-      filter.category = { $regex: `^${relaxedCategory}$`, $options: "i" };
+      const upperCat = category.toUpperCase();
+      
+      if (upperCat === 'SHIRT') {
+        filter.$and = filter.$and || [];
+        filter.$and.push({ category: { $regex: 'SHIRT', $options: 'i' } });
+        filter.$and.push({ category: { $not: { $regex: 'T-SHIRT', $options: 'i' } } });
+      } else if (upperCat === 'T-SHIRT' || upperCat === 'JEANS' || upperCat === 'PANT') {
+        filter.category = { $regex: relaxedCategory, $options: "i" };
+      } else {
+        filter.category = { $regex: `^${relaxedCategory}$`, $options: "i" };
+      }
     }
     if (sale === "true") {
       filter.isOnSale = true;
@@ -48,6 +58,7 @@ router.get("/", async (req, res) => {
     // Calculate category counts independent of the current category filter
     const baseFilter = { ...filter };
     delete baseFilter.category;
+    delete baseFilter.$and;
     const countsAggr = await Product.aggregate([
       { $match: baseFilter },
       { $group: { _id: "$category", count: { $sum: 1 } } }
