@@ -10,7 +10,7 @@ const Product = require("../models/Product");
 // POST /api/orders - Create a new order
 router.post("/", async (req, res) => {
   try {
-    const { user, customer, shippingAddress, items, financials, paymentMethod } = req.body;
+    const { user, customer, shippingAddress, items, financials, paymentMethod, razorpayOrderId, razorpayPaymentId } = req.body;
 
     // Fetch all products involved in the order at once
     const productIds = [...new Set(items.map(item => item.product.toString()))];
@@ -48,6 +48,8 @@ router.post("/", async (req, res) => {
       items,
       financials,
       paymentMethod,
+      razorpayOrderId,
+      razorpayPaymentId,
       paymentStatus: "Paid", // Mocking success immediately for now
       orderStatus: "Pending Delivery Quote"
     });

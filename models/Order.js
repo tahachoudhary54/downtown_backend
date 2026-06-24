@@ -31,6 +31,8 @@ const orderSchema = new mongoose.Schema(
     deliveryCharge: { type: Number, default: null },
     paymentMethod: { type: String, required: true }, // 'upi' or 'netbanking'
     paymentStatus: { type: String, default: 'Pending' }, // 'Pending', 'Paid', 'Failed'
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
     orderStatus: { type: String, default: 'Pending Delivery Quote' }, // 'Pending Delivery Quote', 'Waiting for Customer Confirmation', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'
   },
   { timestamps: true }
