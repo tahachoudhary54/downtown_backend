@@ -11,7 +11,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Setup Nodemailer transporter
 let transporter;
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_REFRESH_TOKEN) {
+if (process.env.NODE_ENV === "production") {
   const OAuth2 = google.auth.OAuth2;
   const oauth2Client = new OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -297,57 +297,39 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    let user = await User.findOne({ email });
-
-    // Admin Flow
-    if (user && user.role === 'admin') {
-      if (!password) {
-        return res.json({ success: true, requiresPassword: true });
-      }
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(400).json({ success: false, message: "Invalid credentials" });
-      }
-      
-      const payload = {
-        user: { id: user.id, name: user.name, email: user.email, role: user.role },
-      };
-      const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
-      jwt.sign(payload, secret, { expiresIn: "7d" }, (err, token) => {
-        if (err) throw err;
-        res.json({ success: true, token, user: payload.user });
-      });
-      return;
-    }
-
-    // Customer Flow (Passwordless OTP)
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
-
+    // Check if user exists
+    const user = await User.findOne({ email });
     if (!user) {
-      // Create new user if they don't exist
-      user = new User({
-        name: email.split('@')[0],
-        email,
-        otp,
-        otpExpires,
-      });
-    } else {
-      // Update existing user with new OTP
-      user.otp = otp;
-      user.otpExpires = otpExpires;
+      return res.status(400).json({ success: false, message: "Invalid credentials" });
     }
-    
-    await user.save();
 
-    const emailResult = await sendOtpEmail(user.email, otp);
-
-    const responsePayload = { success: true, requiresOtp: true, message: "OTP sent to your email" };
-    if (emailResult && emailResult.previewUrl) {
-      responsePayload.previewUrl = emailResult.previewUrl;
+    // Check if verified
+    if (!user.isVerified) {
+      return res.status(400).json({ success: false, message: "Please verify your email first" });
     }
-    res.status(200).json(responsePayload);
 
+    // Check password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "Invalid credentials" });
+    }
+
+    // Generate JWT
+    const payload = {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    };
+
+    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
+
+    jwt.sign(payload, secret, { expiresIn: "7d" }, (err, token) => {
+      if (err) throw err;
+      res.json({ success: true, token, user: payload.user });
+    });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ success: false, message: "Server error" });
