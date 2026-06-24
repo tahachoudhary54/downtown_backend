@@ -34,6 +34,13 @@ router.put("/", auth, adminOnly, async (req, res) => {
     if (req.body.categories) settings.categories = req.body.categories;
 
     await settings.save();
+
+    // Emit real-time update to all connected clients
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("settings_updated", settings);
+    }
+
     res.json({ success: true, data: settings });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

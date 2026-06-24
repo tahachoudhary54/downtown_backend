@@ -5,16 +5,36 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const User = require("../models/User");
 const { OAuth2Client } = require("google-auth-library");
+const { google } = require("googleapis");
+
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Setup Nodemailer transporter
 let transporter;
 if (process.env.NODE_ENV === "production") {
+  const OAuth2 = google.auth.OAuth2;
+  const oauth2Client = new OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    "https://developers.google.com/oauthplayground"
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+  });
+
   transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
+      type: "OAuth2",
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+      accessToken: async () => {
+        const { token } = await oauth2Client.getAccessToken();
+        return token;
+      }
     },
   });
 } else {
@@ -191,59 +211,6 @@ const sendOtpEmail = async (email, otp) => {
   }
 };
 
-// POST /api/auth/signup
-router.post("/signup", async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-
-    // Check if user already exists
-    let user = await User.findOne({ email });
-    if (user && user.isVerified) {
-      return res.status(400).json({ success: false, message: "User with this email already exists" });
-    }
-
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    if (user) {
-      // User exists but not verified, update their info and OTP
-      user.name = name;
-      user.password = hashedPassword;
-      user.otp = otp;
-      user.otpExpires = otpExpires;
-      await user.save();
-    } else {
-      // Create new unverified user
-      user = new User({
-        name,
-        email,
-        password: hashedPassword,
-        otp,
-        otpExpires,
-      });
-      await user.save();
-    }
-
-    // Send OTP email
-    const emailResult = await sendOtpEmail(user.email, otp);
-
-    // Include preview URL in dev mode (if any)
-    const responsePayload = { success: true, message: "OTP sent to your email" };
-    if (emailResult && emailResult.previewUrl) {
-      responsePayload.previewUrl = emailResult.previewUrl;
-    }
-    res.status(201).json(responsePayload);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
 // POST /api/auth/verify-otp
 router.post("/verify-otp", async (req, res) => {
   try {
@@ -330,39 +297,57 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check if user exists
-    const user = await User.findOne({ email });
+    let user = await User.findOne({ email });
+
+    // Admin Flow
+    if (user && user.role === 'admin') {
+      if (!password) {
+        return res.json({ success: true, requiresPassword: true });
+      }
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, message: "Invalid credentials" });
+      }
+      
+      const payload = {
+        user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      };
+      const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
+      jwt.sign(payload, secret, { expiresIn: "7d" }, (err, token) => {
+        if (err) throw err;
+        res.json({ success: true, token, user: payload.user });
+      });
+      return;
+    }
+
+    // Customer Flow (Passwordless OTP)
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+
     if (!user) {
-      return res.status(400).json({ success: false, message: "Invalid credentials" });
+      // Create new user if they don't exist
+      user = new User({
+        name: email.split('@')[0],
+        email,
+        otp,
+        otpExpires,
+      });
+    } else {
+      // Update existing user with new OTP
+      user.otp = otp;
+      user.otpExpires = otpExpires;
     }
+    
+    await user.save();
 
-    // Check if verified
-    if (!user.isVerified) {
-      return res.status(400).json({ success: false, message: "Please verify your email first" });
+    const emailResult = await sendOtpEmail(user.email, otp);
+
+    const responsePayload = { success: true, requiresOtp: true, message: "OTP sent to your email" };
+    if (emailResult && emailResult.previewUrl) {
+      responsePayload.previewUrl = emailResult.previewUrl;
     }
+    res.status(200).json(responsePayload);
 
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ success: false, message: "Invalid credentials" });
-    }
-
-    // Generate JWT
-    const payload = {
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    };
-
-    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
-
-    jwt.sign(payload, secret, { expiresIn: "7d" }, (err, token) => {
-      if (err) throw err;
-      res.json({ success: true, token, user: payload.user });
-    });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ success: false, message: "Server error" });
@@ -427,199 +412,5 @@ router.post("/google", async (req, res) => {
   }
 });
 
-// Helper function to send Reset Password email
-const sendResetPasswordEmail = async (email, otp) => {
-  const fromAddress = process.env.EMAIL_USER || "no-reply@localhost";
-  const mailOptions = {
-    from: `"Downtown Boutique" <${fromAddress}>`,
-    replyTo: fromAddress,
-    to: email,
-    subject: "Reset Your Password - Downtown Boutique",
-    text: `Your Password Reset Code is: ${otp}\n\nThis code expires in 15 minutes.\n\nIf you didn't request a password reset, you can safely ignore this email.`,
-    html: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reset Your Password – Downtown Boutique</title>
-</head>
-<body style="margin:0; padding:0; background-color:#0d0d0d; font-family:'Inter','Poppins',Arial,sans-serif; -webkit-font-smoothing:antialiased;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0d0d0d; padding:40px 16px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; background:#111111; border-radius:16px; overflow:hidden; box-shadow:0 24px 64px rgba(0,0,0,0.6);">
-          <tr>
-            <td style="background:linear-gradient(135deg,#111111 0%,#1a1a1a 100%); padding:40px 40px 32px; text-align:center; border-bottom:1px solid #222;">
-              <p style="margin:0 0 4px; font-size:11px; font-weight:700; letter-spacing:4px; color:#c8a96e; text-transform:uppercase;">Downtown</p>
-              <p style="margin:0; font-size:26px; font-weight:800; letter-spacing:2px; color:#ffffff; text-transform:uppercase; line-height:1;">BOUTIQUE</p>
-              <div style="width:48px; height:2px; background:linear-gradient(90deg,#c8a96e,#e8c97e); margin:16px auto 0; border-radius:1px;"></div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:44px 40px 32px; text-align:center;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
-                <tr>
-                  <td align="center">
-                    <table cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td style="width:64px; height:64px; background:linear-gradient(135deg,#1e1e1e,#2a2a2a); border-radius:50%; border:1px solid #2e2e2e; text-align:center; vertical-align:middle;">
-                          <span style="font-size:28px; line-height:64px; display:block;">🔑</span>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-              <h1 style="margin:0 0 16px; font-size:26px; font-weight:700; color:#ffffff; letter-spacing:-0.3px; line-height:1.3;">
-                Reset Your Password
-              </h1>
-              <p style="margin:0; font-size:15px; color:#888888; line-height:1.7; max-width:400px; margin-left:auto; margin-right:auto;">
-                We received a request to reset your password. Use the verification code below to set up a new password.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 40px 40px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="background:#1a1a1a; border:1px solid #2a2a2a; border-radius:14px; padding:32px 24px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
-                    <p style="margin:0 0 20px; font-size:11px; font-weight:700; letter-spacing:3px; color:#c8a96e; text-transform:uppercase;">Password Reset Code</p>
-                    <div style="display:inline-block; background:#111111; border:1px solid #2e2e2e; border-radius:12px; padding:18px 36px; margin-bottom:20px;">
-                      <span style="font-size:40px; font-weight:800; letter-spacing:10px; color:#ffffff; font-family:'Courier New',Courier,monospace; line-height:1;">${otp}</span>
-                    </div>
-                    <p style="margin:0; font-size:13px; color:#555555; letter-spacing:0.3px;">
-                      ⏱ This code expires in <strong style="color:#c8a96e;">15 minutes</strong>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 40px 40px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="background:#161616; border-left:3px solid #c8a96e; border-radius:0 8px 8px 0; padding:14px 18px;">
-                    <p style="margin:0; font-size:13px; color:#666666; line-height:1.6;">
-                      🔐 <strong style="color:#888888;">Security Notice:</strong> If you didn't request a password reset, you can safely ignore this email. Your password won't change until you create a new one.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 40px;">
-              <div style="height:1px; background:linear-gradient(90deg,transparent,#222,transparent);"></div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:28px 40px 36px; text-align:center;">
-              <p style="margin:0 0 12px; font-size:11px; font-weight:700; letter-spacing:3px; color:#333333; text-transform:uppercase;">Downtown Boutique</p>
-              <p style="margin:20px 0 0; font-size:11px; color:#2e2e2e;">© 2026 Downtown Boutique. All rights reserved.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Reset password email sent to ${email}`);
-    return { previewUrl: null };
-  } catch (primaryErr) {
-    console.error('Primary email send failed:', primaryErr);
-  }
-
-  try {
-    const testAccount = await nodemailer.createTestAccount();
-    const ethTransport = nodemailer.createTransport({
-      host: testAccount.smtp.host,
-      port: testAccount.smtp.port,
-      secure: testAccount.smtp.secure,
-      auth: { user: testAccount.user, pass: testAccount.pass },
-    });
-    const info = await ethTransport.sendMail(mailOptions);
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    console.log('Ethereal preview URL:', previewUrl);
-    return { previewUrl };
-  } catch (fallbackErr) {
-    console.error('Ethereal fallback also failed:', fallbackErr);
-    return { previewUrl: null };
-  }
-};
-
-// POST /api/auth/forgot-password
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email required" });
-    }
-    
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ success: false, message: "No account found with this email" });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
-    
-    user.resetPasswordOtp = otp;
-    user.resetPasswordExpires = otpExpires;
-    await user.save();
-
-    const emailResult = await sendResetPasswordEmail(user.email, otp);
-    
-    const response = { success: true, message: "Password reset instructions sent to your email" };
-    if (emailResult && emailResult.previewUrl) {
-      response.previewUrl = emailResult.previewUrl;
-    }
-    return res.json(response);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
-// POST /api/auth/reset-password
-router.post("/reset-password", async (req, res) => {
-  try {
-    const { email, otp, newPassword } = req.body;
-    if (!email || !otp || !newPassword) {
-      return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
-    }
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    if (user.resetPasswordOtp !== otp) {
-      return res.status(400).json({ success: false, message: "Invalid verification code" });
-    }
-
-    if (user.resetPasswordExpires < new Date()) {
-      return res.status(400).json({ success: false, message: "Verification code has expired" });
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-    user.password = hashedPassword;
-    user.resetPasswordOtp = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
-
-    res.json({ success: true, message: "Password has been reset successfully" });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
 module.exports = router;
+
