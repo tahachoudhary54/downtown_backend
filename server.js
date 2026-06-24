@@ -18,7 +18,14 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 const cleanFrontendUrl = frontendUrl.endsWith('/') ? frontendUrl.slice(0, -1) : frontendUrl;
-const allowedOrigins = [cleanFrontendUrl, cleanFrontendUrl + '/'];
+const allowedOrigins = [
+  cleanFrontendUrl,
+  cleanFrontendUrl + '/',
+  "https://downtownboutique.in",
+  "https://www.downtownboutique.in",
+  "http://localhost:3000",
+  /\.vercel\.app$/  // allow all vercel preview URLs
+];
 
 const io = new Server(server, {
   cors: {
