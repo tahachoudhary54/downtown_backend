@@ -11,7 +11,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Setup Nodemailer transporter
 let transporter;
-if (process.env.NODE_ENV === "production") {
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_REFRESH_TOKEN) {
   const OAuth2 = google.auth.OAuth2;
   const oauth2Client = new OAuth2(
     process.env.GOOGLE_CLIENT_ID,
