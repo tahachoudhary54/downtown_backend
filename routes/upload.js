@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { upload } = require('../config/cloudinary');
+const { auth, adminOnly } = require('../middleware/authMiddleware');
 
 // @route   POST /api/upload
 // @desc    Upload an image to Cloudinary
-// @access  Public (or protected if needed)
-router.post('/', upload.single('image'), (req, res) => {
+// @access  Admin Only
+router.post('/', auth, adminOnly, upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
