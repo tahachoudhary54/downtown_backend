@@ -9,6 +9,8 @@ const productSchema = new mongoose.Schema(
     description: { type: String, default: "" },
     category: { type: String, default: "clothing" },
     isOnSale: { type: Boolean, default: false },
+    isEssential: { type: Boolean, default: false },
+    essentialCollection: { type: String, default: '' }, // e.g. "BAGGY SHIRT", "POLO T-SHIRT"
     originalPrice: { type: String },
     inStock: { type: Boolean, default: true },
     sku: { type: String, default: "" },

@@ -5,9 +5,9 @@ const settingsSchema = new mongoose.Schema(
     hero: {
       slides: { 
         type: [String], 
-        default: ["/hero_bg.png", "/mens_fashion_hero_2.png", "/hero_bg_v6.png"] 
+        default: ["/hero_slide_1.jpg", "/hero_slide_2.jpg", "/hero_slide_3.jpg"] 
       },
-      title: { type: String, default: "ELEVATE YOUR\nEVERYDAY" },
+      title: { type: String, default: "Everyday Style. Premium Comfort." },
       subtitle: { type: String, default: "Discover the new standard of modern luxury menswear. Designed for the discerning individual." },
       buttonText: { type: String, default: "Shop Collection" },
       buttonLink: { type: String, default: "/shop" }

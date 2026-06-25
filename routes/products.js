@@ -14,7 +14,7 @@ router.get("/", async (req, res) => {
       return res.json(productCache.get(cacheKey));
     }
 
-    const { search, category, sale, minPrice, maxPrice } = req.query;
+    const { search, category, sale, essential, essentialCollection, minPrice, maxPrice } = req.query;
     let filter = {};
 
     if (search) {
@@ -25,21 +25,18 @@ router.get("/", async (req, res) => {
       ];
     }
     if (category) {
-      const relaxedCategory = category.replace(/[- ]/g, '[- ]');
-      const upperCat = category.toUpperCase();
-      
-      if (upperCat === 'SHIRT') {
-        filter.$and = filter.$and || [];
-        filter.$and.push({ category: { $regex: 'SHIRT', $options: 'i' } });
-        filter.$and.push({ category: { $not: { $regex: 'T-SHIRT', $options: 'i' } } });
-      } else if (upperCat === 'T-SHIRT' || upperCat === 'JEANS' || upperCat === 'PANT') {
-        filter.category = { $regex: relaxedCategory, $options: "i" };
-      } else {
-        filter.category = { $regex: `^${relaxedCategory}$`, $options: "i" };
-      }
+      // Products now store exact sub-category names (e.g. "BAGGY SHIRT", "POLO T-SHIRT", "BAGGY JEANS")
+      // Use case-insensitive exact match
+      filter.category = { $regex: `^${category.trim()}$`, $options: 'i' };
     }
     if (sale === "true") {
       filter.isOnSale = true;
+    }
+    if (essential === "true") {
+      filter.isEssential = true;
+    }
+    if (essentialCollection) {
+      filter.essentialCollection = { $regex: `^${essentialCollection.trim()}$`, $options: 'i' };
     }
     
     if (minPrice || maxPrice) {
