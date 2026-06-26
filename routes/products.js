@@ -2,18 +2,10 @@ const express = require("express");
 const router = express.Router();
 const Product = require("../models/Product");
 const { auth, adminOnly } = require("../middleware/authMiddleware");
-const NodeCache = require("node-cache");
-
-const productCache = new NodeCache({ stdTTL: 300, checkperiod: 320 }); // 5 minutes cache
 
 // GET all products (with optional search query)
 router.get("/", async (req, res) => {
   try {
-    const cacheKey = req.originalUrl;
-    if (productCache.has(cacheKey)) {
-      return res.json(productCache.get(cacheKey));
-    }
-
     const { search, category, sale, essential, essentialCollection, minPrice, maxPrice } = req.query;
     let filter = {};
 
@@ -25,8 +17,6 @@ router.get("/", async (req, res) => {
       ];
     }
     if (category) {
-      // Products now store exact sub-category names (e.g. "BAGGY SHIRT", "POLO T-SHIRT", "BAGGY JEANS")
-      // Use case-insensitive exact match
       filter.category = { $regex: `^${category.trim()}$`, $options: 'i' };
     }
     if (sale === "true") {
@@ -80,7 +70,6 @@ router.get("/", async (req, res) => {
       } 
     };
     
-    productCache.set(cacheKey, responseData);
     res.json(responseData);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -103,7 +92,6 @@ router.post("/", auth, adminOnly, async (req, res) => {
   try {
     const product = new Product(req.body);
     await product.save();
-    productCache.flushAll(); // Invalidate cache
     res.status(201).json({ success: true, data: product });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -127,12 +115,13 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
         stock: product.stock,
         inStock: product.inStock,
         inventory: product.inventory,
-        variants: product.variants
+        variants: product.variants,
+        price: product.price,
+        salePrice: product.salePrice
       });
       console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left (Admin Edit)`);
     }
 
-    productCache.flushAll(); // Invalidate cache
     res.json({ success: true, data: product });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -156,7 +145,6 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
       });
     }
 
-    productCache.flushAll(); // Invalidate cache
     res.json({ success: true, message: "Product deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
