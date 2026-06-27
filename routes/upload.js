@@ -6,7 +6,7 @@ const { auth, adminOnly } = require('../middleware/authMiddleware');
 // @route   POST /api/upload
 // @desc    Upload an image to Cloudinary
 // @access  Admin Only
-router.post('/', auth, adminOnly, upload.single('image'), (req, res) => {
+router.post('/', auth, upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
