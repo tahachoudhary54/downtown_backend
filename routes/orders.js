@@ -138,6 +138,9 @@ router.post("/", async (req, res) => {
       });
     }
 
+    if (io) {
+      io.emit("data_updated", { type: "order", action: "create" });
+    }
     res.status(201).json({ success: true, data: order });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -250,6 +253,10 @@ router.put("/:id/status", auth, adminOnly, async (req, res) => {
       });
     }
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "order", action: "update" });
+    }
     res.json({ success: true, data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -297,6 +304,10 @@ router.delete("/:id", auth, async (req, res) => {
     }
 
     await Order.findByIdAndDelete(req.params.id);
+    const io_del = req.app.get("io");
+    if (io_del) {
+      io_del.emit("data_updated", { type: "order", action: "delete" });
+    }
     res.json({ success: true, message: "Order deleted successfully" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -339,6 +350,10 @@ router.put("/:id/delivery-quote", auth, adminOnly, async (req, res) => {
       });
     }
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "order", action: "update" });
+    }
     res.json({ success: true, data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -380,6 +395,10 @@ router.put("/:id/confirm-delivery", auth, async (req, res) => {
       }
     }
 
+    const io_update = req.app.get("io");
+    if (io_update) {
+      io_update.emit("data_updated", { type: "order", action: "update" });
+    }
     res.json({ success: true, data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -452,6 +471,10 @@ router.put("/:id/cancel", auth, async (req, res) => {
       }
     }
 
+    const io_update2 = req.app.get("io");
+    if (io_update2) {
+      io_update2.emit("data_updated", { type: "order", action: "update" });
+    }
     res.json({ success: true, data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

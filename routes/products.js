@@ -92,6 +92,12 @@ router.post("/", auth, adminOnly, async (req, res) => {
   try {
     const product = new Product(req.body);
     await product.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "product", action: "create" });
+    }
+
     res.status(201).json({ success: true, data: product });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -119,6 +125,7 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
         price: product.price,
         salePrice: product.salePrice
       });
+      io.emit("data_updated", { type: "product", action: "update" });
       console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left (Admin Edit)`);
     }
 
@@ -134,7 +141,7 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ success: false, message: "Product not found" });
     
-    const io = req.app.get('socketio');
+    const io = req.app.get('io');
     if (io) {
       io.emit("stock_updated", {
         productId: product._id,
@@ -143,6 +150,7 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
         inventory: {},
         variants: []
       });
+      io.emit("data_updated", { type: "product", action: "delete" });
     }
 
     res.json({ success: true, message: "Product deleted" });

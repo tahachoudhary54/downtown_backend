@@ -39,6 +39,7 @@ router.put("/", auth, adminOnly, async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.emit("settings_updated", settings);
+      io.emit("data_updated", { type: "settings", action: "update" });
     }
 
     res.json({ success: true, data: settings });

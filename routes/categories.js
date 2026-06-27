@@ -29,6 +29,12 @@ router.post("/", auth, adminOnly, async (req, res) => {
 
     const newCategory = new Category({ name, slug });
     await newCategory.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "category", action: "create" });
+    }
+
     res.status(201).json({ success: true, data: newCategory });
   } catch (error) {
     console.error("Create category error:", error);
@@ -62,6 +68,11 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
     // Optional: if category name changed, we might want to update all products with old category name.
     // For simplicity, we just update the category. In a full system, slug or ID should be referenced.
     
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "category", action: "update" });
+    }
+
     res.json({ success: true, data: updated });
   } catch (error) {
     console.error("Update category error:", error);
@@ -85,6 +96,12 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
     }
 
     await Category.findByIdAndDelete(req.params.id);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "category", action: "delete" });
+    }
+
     res.json({ success: true, message: "Category deleted successfully" });
   } catch (error) {
     console.error("Delete category error:", error);
