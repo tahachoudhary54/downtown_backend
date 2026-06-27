@@ -4,6 +4,7 @@ const Ticket = require("../models/Ticket");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { sendEmail } = require("../utils/email");
 
 // POST /api/tickets - Customer creates a new ticket
 router.post("/", auth, async (req, res) => {
@@ -51,6 +52,72 @@ router.post("/", auth, async (req, res) => {
 
     res.status(201).json({ success: true, data: ticket });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/tickets/guest - Public guest creates a new ticket (Contact Us form)
+router.post("/guest", async (req, res) => {
+  try {
+    const { name, email, subject, message } = req.body;
+    
+    if (!name || !email || !subject || !message) {
+      return res.status(400).json({ success: false, message: "Please provide all required fields" });
+    }
+
+    const ticket = new Ticket({
+      guestName: name,
+      guestEmail: email,
+      subject,
+      category: "Other", // Default category for contact form
+      messages: [{
+        sender: "customer",
+        text: message
+      }]
+    });
+
+    await ticket.save();
+
+    // 1. Trigger Admin Socket Notification
+    const admins = await User.find({ role: "admin" });
+    const notifications = admins.map(admin => ({
+      userId: admin._id,
+      title: "New Guest Inquiry",
+      message: `A new inquiry "${subject}" has been submitted by ${name}.`,
+      type: "new_ticket"
+    }));
+    
+    if (notifications.length > 0) {
+      await Notification.insertMany(notifications);
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("admin_notification", {
+          title: "New Guest Inquiry",
+          desc: `A new inquiry "${subject}" has been submitted by ${name}.`,
+          type: "ticket"
+        });
+      }
+    }
+
+    // 2. Send email to Admin
+    const adminEmail = process.env.EMAIL_USER || "admin@downtownboutique.com";
+    await sendEmail({
+      to: adminEmail,
+      subject: `New Contact Form Inquiry: ${subject}`,
+      text: `You have received a new inquiry from the Contact Us page.\n\nName: ${name}\nEmail: ${email}\n\nMessage:\n${message}`,
+      replyTo: email
+    });
+
+    // 3. Send receipt email to Customer
+    await sendEmail({
+      to: email,
+      subject: `We received your message: ${subject}`,
+      text: `Hi ${name},\n\nThank you for contacting Downtown Boutique. We have received your message regarding "${subject}" and our team will get back to you shortly.\n\nYour message:\n${message}\n\nBest regards,\nDowntown Boutique Team`,
+    });
+
+    res.status(201).json({ success: true, data: ticket });
+  } catch (err) {
+    console.error("Guest ticket error:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

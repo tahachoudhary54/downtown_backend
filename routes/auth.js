@@ -9,47 +9,7 @@ const { google } = require("googleapis");
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Setup Nodemailer transporter
-let transporter;
-if (process.env.NODE_ENV === "production") {
-  const OAuth2 = google.auth.OAuth2;
-  const oauth2Client = new OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    "https://developers.google.com/oauthplayground"
-  );
-
-  oauth2Client.setCredentials({
-    refresh_token: process.env.GOOGLE_REFRESH_TOKEN
-  });
-
-  transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      type: "OAuth2",
-      user: process.env.EMAIL_USER,
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
-      accessToken: async () => {
-        const { token } = await oauth2Client.getAccessToken();
-        return token;
-      }
-    },
-  });
-} else {
-  // Development: use Mailtrap (or Ethereal fallback)
-  transporter = nodemailer.createTransport({
-    host: process.env.MAILTRAP_HOST || "smtp.mailtrap.io",
-    port: parseInt(process.env.MAILTRAP_PORT) || 2525,
-    auth: {
-      user: process.env.MAILTRAP_USER,
-      pass: process.env.MAILTRAP_PASS,
-    },
-  });
-}
-
-
+const { sendEmail } = require("../utils/email");
 // Helper function to send OTP email with fallback to Ethereal (development)
 const sendOtpEmail = async (email, otp) => {
   const fromAddress = process.env.EMAIL_USER || "no-reply@localhost";
@@ -183,32 +143,12 @@ const sendOtpEmail = async (email, otp) => {
 </html>`,
   };
 
-  // Try primary transporter (Gmail or Mailtrap)
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`OTP email sent to ${email}`);
-    return { previewUrl: null };
-  } catch (primaryErr) {
-    console.error('Primary email send failed:', primaryErr);
-  }
-
-  // Fallback to Ethereal test account (dev only)
-  try {
-    const testAccount = await nodemailer.createTestAccount();
-    const ethTransport = nodemailer.createTransport({
-      host: testAccount.smtp.host,
-      port: testAccount.smtp.port,
-      secure: testAccount.smtp.secure,
-      auth: { user: testAccount.user, pass: testAccount.pass },
-    });
-    const info = await ethTransport.sendMail(mailOptions);
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    console.log('Ethereal preview URL:', previewUrl);
-    return { previewUrl };
-  } catch (fallbackErr) {
-    console.error('Ethereal fallback also failed:', fallbackErr);
-    return { previewUrl: null };
-  }
+  return sendEmail({
+    to: email,
+    subject: "Your Verification Code - Downtown Boutique",
+    text: `Your Verification Code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you didn't create an account, please ignore this email.`,
+    html: mailOptions.html
+  });
 };
 
 // POST /api/auth/verify-otp
@@ -344,14 +284,21 @@ router.post("/google", async (req, res) => {
       return res.status(400).json({ success: false, message: "No credential provided" });
     }
 
-    // Decode credential directly and check audience, avoiding clock skew issues
-    // WORKAROUND: The system clock is out of sync with Google's servers, causing
-    // "Expiration time too far in future" or "Token used too early" errors.
-    // We are temporarily decoding the token directly without strict time verification.
-    // IMPORTANT: In production, revert to using `googleClient.verifyIdToken` for security!
-    const payload = jwt.decode(credential);
-    if (!payload || payload.aud !== process.env.GOOGLE_CLIENT_ID) {
-      return res.status(400).json({ success: false, message: "Invalid Google token or audience mismatch" });
+    let payload;
+    
+    if (process.env.NODE_ENV === "production") {
+      // PRODUCTION: Strictly verify the Google signature to prevent forged tokens
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } else {
+      // DEVELOPMENT: Decode without signature verification to avoid local clock-skew errors
+      payload = jwt.decode(credential);
+      if (!payload || payload.aud !== process.env.GOOGLE_CLIENT_ID) {
+        return res.status(400).json({ success: false, message: "Invalid Google token or audience mismatch" });
+      }
     }
 
     const { email, name } = payload;
