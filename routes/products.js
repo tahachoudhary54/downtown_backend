@@ -2,11 +2,12 @@ const express = require("express");
 const router = express.Router();
 const Product = require("../models/Product");
 const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { autoTagProduct } = require("../controllers/aiController");
 
 // GET all products (with optional search query)
 router.get("/", async (req, res) => {
   try {
-    const { search, category, sale, essential, essentialCollection, minPrice, maxPrice } = req.query;
+    const { search, category, subCategory, sale, essential, essentialCollection, minPrice, maxPrice } = req.query;
     let filter = {};
 
     if (search) {
@@ -18,6 +19,9 @@ router.get("/", async (req, res) => {
     }
     if (category) {
       filter.category = { $regex: `^${category.trim()}$`, $options: 'i' };
+    }
+    if (subCategory) {
+      filter.subCategory = { $regex: `^${subCategory.trim()}$`, $options: 'i' };
     }
     if (sale === "true") {
       filter.isOnSale = true;
@@ -92,6 +96,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
   try {
     const product = new Product(req.body);
     await product.save();
+    autoTagProduct(product);
 
     const io = req.app.get("io");
     if (io) {
@@ -112,6 +117,8 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
       runValidators: true,
     });
     if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+    
+    autoTagProduct(product);
 
     // Emit real-time stock update
     const io = req.app.get("io");

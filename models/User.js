@@ -21,7 +21,13 @@ const userSchema = new mongoose.Schema(
         phone: { type: String },
         isDefault: { type: Boolean, default: false }
       }
-    ]
+    ],
+    wishlist: [{ type: mongoose.Schema.Types.Mixed, default: [] }],
+    shoppingPreferences: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {}
+    }
   },
   { timestamps: true }
 );

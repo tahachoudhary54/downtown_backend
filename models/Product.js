@@ -8,6 +8,13 @@ const productSchema = new mongoose.Schema(
     img: { type: String, required: true },
     description: { type: String, default: "" },
     category: { type: String, default: "clothing" },
+    subCategory: { type: String, default: "" },
+    fit: { type: String, default: "" },
+    fabric: { type: String, default: "" },
+    occasion: [{ type: String }],
+    gender: { type: String, default: "unisex" },
+    season: [{ type: String }],
+    aiTags: [{ type: String }],
     isOnSale: { type: Boolean, default: false },
     isEssential: { type: Boolean, default: false },
     essentialCollection: { type: String, default: '' }, // e.g. "BAGGY SHIRT", "POLO T-SHIRT"

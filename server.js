@@ -56,7 +56,7 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true 
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.use("/api/products", productRoutes);
 app.use("/api/auth", authRoutes);
@@ -72,6 +72,8 @@ app.use("/api/policies", require("./routes/policies"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/reviews", require("./routes/reviews"));
 app.use("/api/payment", require("./routes/payment"));
+app.use("/api/ai", require("./routes/aiRoutes"));
+app.use("/api/collections", require("./routes/collections"));
 // Health check
 app.get("/", (req, res) => {
   res.json({ message: "Downtown Boutique API is running!" });

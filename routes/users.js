@@ -134,6 +134,66 @@ router.put("/me/addresses/:addressId/default", auth, async (req, res) => {
   }
 });
 
+// GET user wishlist
+router.get("/me/wishlist", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    res.json({ success: true, data: user.wishlist || [] });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT update user wishlist
+router.put("/me/wishlist", auth, async (req, res) => {
+  try {
+    const { wishlist } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    user.wishlist = Array.isArray(wishlist) ? wishlist : [];
+    user.markModified('wishlist');
+    await user.save();
+    res.json({ success: true, data: user.wishlist });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST merge guest wishlist with user account wishlist upon login
+router.post("/me/wishlist/merge", auth, async (req, res) => {
+  try {
+    const { guestWishlist } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const currentWishlist = user.wishlist || [];
+    const localItems = Array.isArray(guestWishlist) ? guestWishlist : [];
+
+    const isSame = (p1, p2) => {
+      if (!p1 || !p2) return false;
+      const id1 = p1._id || p1.id;
+      const id2 = p2._id || p2.id;
+      return id1 && id2 && id1.toString() === id2.toString();
+    };
+
+    const newItems = localItems.filter(
+      (localP) => !currentWishlist.some((dbP) => isSame(dbP, localP))
+    );
+
+    if (newItems.length > 0) {
+      user.wishlist = [...currentWishlist, ...newItems];
+      user.markModified('wishlist');
+      await user.save();
+    }
+
+    res.json({ success: true, data: user.wishlist });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET all users (admin only)
 router.get("/", auth, adminOnly, async (req, res) => {
   try {
