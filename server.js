@@ -16,9 +16,13 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const server = http.createServer(app);
-const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-const cleanFrontendUrl = frontendUrl.endsWith('/') ? frontendUrl.slice(0, -1) : frontendUrl;
-const allowedOrigins = [cleanFrontendUrl, cleanFrontendUrl + '/'];
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://downtownboutique.in",
+  "https://www.downtownboutique.in",
+  process.env.FRONTEND_URL
+].filter(Boolean);
 
 const io = new Server(server, {
   cors: {
