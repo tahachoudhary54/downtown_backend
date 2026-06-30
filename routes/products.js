@@ -7,7 +7,7 @@ const { autoTagProduct } = require("../controllers/aiController");
 // GET all products (with optional search query)
 router.get("/", async (req, res) => {
   try {
-    const { search, category, subCategory, sale, essential, essentialCollection, minPrice, maxPrice } = req.query;
+    const { search, category, subCategory, sale, essential, essentialCollection, minPrice, maxPrice, inStock, sort } = req.query;
     let filter = {};
 
     if (search) {
@@ -39,12 +39,38 @@ router.get("/", async (req, res) => {
       if (maxPrice) filter.priceValue.$lte = Number(maxPrice);
     }
 
+    if (inStock) {
+      filter.inStock = inStock === "true";
+    }
+
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
+    let sortOption = { createdAt: -1 };
+    if (sort) {
+      switch (sort) {
+        case 'price-asc':
+          sortOption = { priceValue: 1 };
+          break;
+        case 'price-desc':
+          sortOption = { priceValue: -1 };
+          break;
+        case 'best-selling':
+          sortOption = { salesCount: -1, createdAt: -1 };
+          break;
+        case 'most-popular':
+          sortOption = { views: -1, createdAt: -1 };
+          break;
+        case 'newest':
+        default:
+          sortOption = { createdAt: -1 };
+          break;
+      }
+    }
+
     const total = await Product.countDocuments(filter);
-    const products = await Product.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit);
+    const products = await Product.find(filter).sort(sortOption).skip(skip).limit(limit);
 
     // Calculate category counts independent of the current category filter
     const baseFilter = { ...filter };
