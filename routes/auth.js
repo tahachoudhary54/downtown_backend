@@ -151,6 +151,54 @@ const sendOtpEmail = async (email, otp) => {
   });
 };
 
+// POST /api/auth/signup
+router.post("/signup", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: "Please provide all fields" });
+    }
+
+    let user = await User.findOne({ email });
+
+    if (user) {
+      if (user.isVerified) {
+        return res.status(400).json({ success: false, message: "User already exists" });
+      }
+    } else {
+      user = new User({ name, email });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(password, salt);
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+    user.otp = otp;
+    user.otpExpires = otpExpires;
+    user.isVerified = false;
+
+    await user.save();
+
+    // Send OTP email
+    const emailResult = await sendOtpEmail(user.email, otp);
+
+    const response = { success: true, message: "OTP sent to your email" };
+    if (emailResult && emailResult.previewUrl) {
+      response.previewUrl = emailResult.previewUrl;
+    }
+
+    res.status(201).json(response);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 // POST /api/auth/verify-otp
 router.post("/verify-otp", async (req, res) => {
   try {
@@ -338,6 +386,85 @@ router.post("/google", async (req, res) => {
   } catch (err) {
     console.error("Google Auth Error:", err.message);
     res.status(500).json({ success: false, message: "Auth failed" });
+  }
+});
+
+// POST /api/auth/forgot-password
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // For Google-auth users who don't have a password set yet, we allow them to set one via reset password
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+
+    user.resetPasswordOtp = otp;
+    user.resetPasswordExpires = otpExpires;
+    await user.save();
+
+    // Send email using existing helper (subject and text might be slightly different but works fine for OTP)
+    const emailResult = await sendOtpEmail(user.email, otp);
+
+    const response = { success: true, message: "Password reset OTP sent to your email" };
+    if (emailResult && emailResult.previewUrl) {
+      response.previewUrl = emailResult.previewUrl;
+    }
+
+    res.json(response);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: "Please provide all fields" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (user.resetPasswordOtp !== otp) {
+      return res.status(400).json({ success: false, message: "Invalid OTP" });
+    }
+
+    if (user.resetPasswordExpires < new Date()) {
+      return res.status(400).json({ success: false, message: "OTP has expired" });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    
+    // Clear OTP fields
+    user.resetPasswordOtp = undefined;
+    user.resetPasswordExpires = undefined;
+    
+    // Also set isVerified to true just in case they weren't verified before
+    user.isVerified = true;
+
+    await user.save();
+
+    res.json({ success: true, message: "Password has been reset successfully" });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
