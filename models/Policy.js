@@ -7,7 +7,7 @@ const policySchema = new mongoose.Schema(
     termsAndConditions: { type: String, default: "" },
     privacyPolicy: { type: String, default: "" },
     shippingAndReturns: { type: String, default: "" },
-    sizeGuide: { type: String, default: "" },
+    sizeGuide: { type: mongoose.Schema.Types.Mixed, default: null },
     faq: { type: String, default: "" }
   },
   { timestamps: true }

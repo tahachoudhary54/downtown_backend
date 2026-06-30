@@ -15,6 +15,8 @@ const settingsSchema = new mongoose.Schema(
     seasonalBanner: {
       enabled: { type: Boolean, default: true },
       title: { type: String, default: "Autumn Collection –\nUp to 30% OFF" },
+      subtitle: { type: String, default: "TIMELESS STYLE. MODERN ESSENTIALS." },
+      description: { type: String, default: "Elevated wardrobe staples, crafted\nfor the modern gentleman." },
       image: { type: String, default: "/autumn_banner.png" },
       buttonText: { type: String, default: "SHOP COLLECTION" },
       buttonLink: { type: String, default: "/shop" }
