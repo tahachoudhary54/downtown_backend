@@ -3,6 +3,8 @@ const router = express.Router();
 const Review = require("../models/Review");
 const Product = require("../models/Product");
 const Order = require("../models/Order");
+const User = require("../models/User");
+const Notification = require("../models/Notification");
 const { auth, adminOnly } = require("../middleware/authMiddleware");
 
 // Helper function to update Product aggregate ratings
@@ -126,6 +128,30 @@ router.post("/", auth, async (req, res) => {
 
     // Update aggregate
     await updateProductAggregate(productId);
+
+    // Notify admins
+    const productData = await Product.findById(productId);
+    const productName = productData ? productData.name : "a product";
+    
+    const admins = await User.find({ role: "admin" });
+    const notifications = admins.map(admin => ({
+      userId: admin._id,
+      title: "New Review Submitted",
+      message: `A new ${rating}-star review was submitted for "${productName}".`,
+      type: "new_review"
+    }));
+
+    if (notifications.length > 0) {
+      await Notification.insertMany(notifications);
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("admin_notification", {
+          title: "New Review Submitted",
+          desc: `A new ${rating}-star review was submitted for "${productName}".`,
+          type: "new_review"
+        });
+      }
+    }
 
     res.status(201).json({ success: true, data: review, message: "Review submitted successfully." });
   } catch (err) {
@@ -263,6 +289,11 @@ router.put("/admin/:id/status", auth, adminOnly, async (req, res) => {
     // Update aggregate
     await updateProductAggregate(review.product);
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "review", action: "update" });
+    }
+
     res.json({ success: true, data: review, message: `Review ${status.toLowerCase()} successfully` });
   } catch (err) {
     console.error(err);
@@ -338,6 +369,11 @@ router.delete("/admin/:id", auth, adminOnly, async (req, res) => {
     if (!review) return res.status(404).json({ success: false, message: "Review not found" });
 
     await updateProductAggregate(review.product);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "review", action: "delete" });
+    }
 
     res.json({ success: true, message: "Review deleted successfully" });
   } catch (err) {
