@@ -7,6 +7,7 @@ const { Server } = require("socket.io");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
+const cookieParser = require("cookie-parser");
 
 const productRoutes = require("./routes/products");
 const authRoutes = require("./routes/auth");
@@ -56,6 +57,7 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
+app.use(cookieParser());
 app.use(cors({ 
   origin: allowedOrigins,
   credentials: true 

@@ -10,6 +10,35 @@ const { google } = require("googleapis");
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const { sendEmail } = require("../utils/email");
+const crypto = require("crypto");
+
+const generateTokens = async (user, res) => {
+  const payload = {
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    }
+  };
+  const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
+  const accessToken = jwt.sign(payload, secret, { expiresIn: "15m" });
+  const refreshToken = jwt.sign(payload, secret, { expiresIn: "30d" });
+
+  const hashedToken = crypto.createHash("sha256").update(refreshToken).digest("hex");
+  if (!user.refreshTokens) user.refreshTokens = [];
+  user.refreshTokens.push(hashedToken);
+  await user.save();
+
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
+
+  return accessToken;
+};
 // Helper function to send OTP email with fallback to Ethereal (development)
 const sendOtpEmail = async (email, otp) => {
   const fromAddress = process.env.EMAIL_USER || "no-reply@localhost";
@@ -227,22 +256,8 @@ router.post("/verify-otp", async (req, res) => {
     user.otpExpires = undefined;
     await user.save();
 
-    // Generate JWT
-    const payload = {
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    };
-
-    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
-    
-    jwt.sign(payload, secret, { expiresIn: "7d" }, (err, token) => {
-      if (err) throw err;
-      res.json({ success: true, token, user: payload.user });
-    });
+    const token = await generateTokens(user, res);
+    res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ success: false, message: "Server error" });
@@ -302,22 +317,8 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Generate JWT
-    const payload = {
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    };
-
-    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
-
-    jwt.sign(payload, secret, { expiresIn: "7d" }, (err, token) => {
-      if (err) throw err;
-      res.json({ success: true, token, user: payload.user });
-    });
+    const token = await generateTokens(user, res);
+    res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ success: false, message: "Server error" });
@@ -367,22 +368,8 @@ router.post("/google", async (req, res) => {
       await user.save();
     }
 
-    // Generate JWT
-    const jwtPayload = {
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    };
-
-    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
-
-    jwt.sign(jwtPayload, secret, { expiresIn: "7d" }, (err, token) => {
-      if (err) throw err;
-      res.json({ success: true, token, user: jwtPayload.user });
-    });
+    const token = await generateTokens(user, res);
+    res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error("Google Auth Error:", err.message);
     res.status(500).json({ success: false, message: "Auth failed" });
@@ -468,5 +455,74 @@ router.post("/reset-password", async (req, res) => {
   }
 });
 
-module.exports = router;
+// GET /api/auth/refresh
+router.get("/refresh", async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({ success: false, message: "No refresh token provided" });
+    }
 
+    const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, secret);
+    } catch (err) {
+      return res.status(401).json({ success: false, message: "Invalid or expired refresh token" });
+    }
+    
+    const user = await User.findById(decoded.user.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    const hashedToken = crypto.createHash("sha256").update(refreshToken).digest("hex");
+    if (!user.refreshTokens) user.refreshTokens = [];
+    const tokenIndex = user.refreshTokens.indexOf(hashedToken);
+
+    if (tokenIndex === -1) {
+      // THEFT DETECTED: A valid but unrecorded refresh token was used.
+      // Wipe all refresh tokens to force re-login on all devices.
+      user.refreshTokens = [];
+      await user.save();
+      res.clearCookie("refreshToken");
+      return res.status(401).json({ success: false, message: "Refresh token rotation anomaly detected. Session revoked." });
+    }
+
+    // Valid token. Remove it and generate a new one.
+    user.refreshTokens.splice(tokenIndex, 1);
+    
+    const token = await generateTokens(user, res);
+    res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  } catch (err) {
+    console.error("Refresh token error:", err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST /api/auth/logout
+router.post("/logout", async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+  if (refreshToken) {
+    try {
+      const hashedToken = crypto.createHash("sha256").update(refreshToken).digest("hex");
+      const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
+      const decoded = jwt.verify(refreshToken, secret);
+      const user = await User.findById(decoded.user.id);
+      if (user && user.refreshTokens) {
+        user.refreshTokens = user.refreshTokens.filter(t => t !== hashedToken);
+        await user.save();
+      }
+    } catch (err) {
+      // Ignore invalid tokens on logout
+    }
+  }
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  });
+  res.json({ success: true, message: "Logged out successfully" });
+});
+
+module.exports = router;
