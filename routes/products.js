@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Product = require("../models/Product");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth } = require("../middleware/authMiddleware");
 const { autoTagProduct } = require("../controllers/aiController");
 
 // GET all products (with optional search query)
@@ -118,7 +118,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // POST create a new product
-router.post("/", auth, adminOnly, async (req, res) => {
+router.post("/", adminAuth, async (req, res) => {
   try {
     const product = new Product(req.body);
     await product.save();
@@ -136,7 +136,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
 });
 
 // PUT update a product
-router.put("/:id", auth, adminOnly, async (req, res) => {
+router.put("/:id", adminAuth, async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -169,7 +169,7 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
 });
 
 // DELETE a product
-router.delete("/:id", auth, adminOnly, async (req, res) => {
+router.delete("/:id", adminAuth, async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ success: false, message: "Product not found" });

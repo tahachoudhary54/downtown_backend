@@ -5,7 +5,7 @@ const Product = require("../models/Product");
 const Order = require("../models/Order");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth } = require("../middleware/authMiddleware");
 
 // Helper function to update Product aggregate ratings
 const updateProductAggregate = async (productId) => {
@@ -232,7 +232,7 @@ router.delete("/:id", auth, async (req, res) => {
 
 // GET /api/reviews/admin
 // Admin: Fetch all reviews
-router.get("/admin/all", auth, adminOnly, async (req, res) => {
+router.get("/admin/all", adminAuth, async (req, res) => {
   try {
     const { page = 1, limit = 20, status, product, search } = req.query;
     
@@ -276,7 +276,7 @@ router.get("/admin/all", auth, adminOnly, async (req, res) => {
 
 // PUT /api/reviews/admin/:id/status
 // Admin: Update review status
-router.put("/admin/:id/status", auth, adminOnly, async (req, res) => {
+router.put("/admin/:id/status", adminAuth, async (req, res) => {
   try {
     const { status } = req.body;
     if (!['Approved', 'Pending', 'Rejected'].includes(status)) {
@@ -303,7 +303,7 @@ router.put("/admin/:id/status", auth, adminOnly, async (req, res) => {
 
 // GET /api/reviews/admin/analytics
 // Admin: Reviews analytics dashboard data
-router.get("/admin/analytics", auth, adminOnly, async (req, res) => {
+router.get("/admin/analytics", adminAuth, async (req, res) => {
   try {
     const totalReviews = await Review.countDocuments();
     const approvedReviews = await Review.countDocuments({ status: 'Approved' });
@@ -363,7 +363,7 @@ router.get("/admin/analytics", auth, adminOnly, async (req, res) => {
 
 // DELETE /api/reviews/admin/:id
 // Admin: Delete review
-router.delete("/admin/:id", auth, adminOnly, async (req, res) => {
+router.delete("/admin/:id", adminAuth, async (req, res) => {
   try {
     const review = await Review.findByIdAndDelete(req.params.id);
     if (!review) return res.status(404).json({ success: false, message: "Review not found" });

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Category = require("../models/Category");
 const Product = require("../models/Product");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth } = require("../middleware/authMiddleware");
 
 // GET all categories
 router.get("/", async (req, res) => {
@@ -17,7 +17,7 @@ router.get("/", async (req, res) => {
 });
 
 // POST add new category (Admin)
-router.post("/", auth, adminOnly, async (req, res) => {
+router.post("/", adminAuth, async (req, res) => {
   try {
     const { name, slug } = req.body;
     
@@ -43,7 +43,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
 });
 
 // PUT edit category (Admin)
-router.put("/:id", auth, adminOnly, async (req, res) => {
+router.put("/:id", adminAuth, async (req, res) => {
   try {
     const { name, slug } = req.body;
     
@@ -81,7 +81,7 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
 });
 
 // DELETE category (Admin)
-router.delete("/:id", auth, adminOnly, async (req, res) => {
+router.delete("/:id", adminAuth, async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ success: false, message: "Category not found" });
@@ -110,7 +110,7 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
 });
 
 // POST add a subcategory to a category
-router.post("/:id/subcategories", auth, adminOnly, async (req, res) => {
+router.post("/:id/subcategories", adminAuth, async (req, res) => {
   try {
     const { name, slug } = req.body;
     const category = await Category.findById(req.params.id);

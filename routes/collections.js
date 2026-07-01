@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Collection = require("../models/Collection");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth } = require("../middleware/authMiddleware");
 
 // GET all collections
 router.get("/", async (req, res) => {
@@ -25,7 +25,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // POST create a new collection
-router.post("/", auth, adminOnly, async (req, res) => {
+router.post("/", adminAuth, async (req, res) => {
   try {
     const collection = new Collection(req.body);
     await collection.save();
@@ -36,7 +36,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
 });
 
 // PUT update a collection
-router.put("/:id", auth, adminOnly, async (req, res) => {
+router.put("/:id", adminAuth, async (req, res) => {
   try {
     const collection = await Collection.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -50,7 +50,7 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
 });
 
 // DELETE a collection
-router.delete("/:id", auth, adminOnly, async (req, res) => {
+router.delete("/:id", adminAuth, async (req, res) => {
   try {
     const collection = await Collection.findByIdAndDelete(req.params.id);
     if (!collection) return res.status(404).json({ success: false, message: "Collection not found" });

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth } = require("../middleware/authMiddleware");
 
 // GET current user
 router.get("/me", auth, async (req, res) => {
@@ -195,7 +195,7 @@ router.post("/me/wishlist/merge", auth, async (req, res) => {
 });
 
 // GET all users (admin only)
-router.get("/", auth, adminOnly, async (req, res) => {
+router.get("/", adminAuth, async (req, res) => {
   try {
     const users = await User.find().select("-password").sort({ createdAt: -1 });
     res.json({ success: true, data: users });
@@ -205,7 +205,7 @@ router.get("/", auth, adminOnly, async (req, res) => {
 });
 
 // PUT update user role (admin only)
-router.put("/:id/role", auth, adminOnly, async (req, res) => {
+router.put("/:id/role", adminAuth, async (req, res) => {
   try {
     const { role } = req.body;
     if (!["user", "admin"].includes(role)) {
@@ -221,7 +221,7 @@ router.put("/:id/role", auth, adminOnly, async (req, res) => {
 });
 
 // DELETE user (admin only)
-router.delete("/:id", auth, adminOnly, async (req, res) => {
+router.delete("/:id", adminAuth, async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { upload } = require('../config/cloudinary');
-const { auth, adminOnly } = require('../middleware/authMiddleware');
+const { auth, adminAuth } = require('../middleware/authMiddleware');
 
 // @route   POST /api/upload
 // @desc    Upload an image to Cloudinary

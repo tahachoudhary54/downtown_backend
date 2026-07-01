@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Order = require("../models/Order");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth } = require("../middleware/authMiddleware");
 
 const Notification = require("../models/Notification");
 const User = require("../models/User");
@@ -148,7 +148,7 @@ router.post("/", async (req, res) => {
 });
 
 // GET /api/orders - Admin view all orders
-router.get("/", auth, adminOnly, async (req, res) => {
+router.get("/", adminAuth, async (req, res) => {
   try {
     const orders = await Order.find().sort({ createdAt: -1 });
     res.json({ success: true, data: orders });
@@ -168,7 +168,7 @@ router.get("/myorders", auth, async (req, res) => {
 });
 
 // PUT /api/orders/:id/status - Admin update order status
-router.put("/:id/status", auth, adminOnly, async (req, res) => {
+router.put("/:id/status", adminAuth, async (req, res) => {
   try {
     const { orderStatus } = req.body;
     
@@ -315,7 +315,7 @@ router.delete("/:id", auth, async (req, res) => {
 });
 
 // PUT /api/orders/:id/delivery-quote - Admin set delivery charge
-router.put("/:id/delivery-quote", auth, adminOnly, async (req, res) => {
+router.put("/:id/delivery-quote", adminAuth, async (req, res) => {
   try {
     const { deliveryCharge } = req.body;
     if (deliveryCharge === undefined || deliveryCharge === null) {

@@ -3,7 +3,7 @@ const router = express.Router();
 const Ticket = require("../models/Ticket");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth, authOrAdmin } = require("../middleware/authMiddleware");
 const { sendEmail } = require("../utils/email");
 
 // POST /api/tickets - Customer creates a new ticket
@@ -100,7 +100,7 @@ router.post("/guest", async (req, res) => {
     }
 
     // 2. Send email to Admin
-    const adminEmail = process.env.EMAIL_USER || "admin@downtownboutique.com";
+    const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || "admin@downtownboutique.com";
     await sendEmail({
       to: adminEmail,
       subject: `New Contact Form Inquiry: ${subject}`,
@@ -133,7 +133,7 @@ router.get("/my-tickets", auth, async (req, res) => {
 });
 
 // GET /api/tickets - Admin view all tickets
-router.get("/", auth, adminOnly, async (req, res) => {
+router.get("/", adminAuth, async (req, res) => {
   try {
     const tickets = await Ticket.find().populate("user", "name email").sort({ updatedAt: -1 });
     res.json({ success: true, data: tickets });
@@ -143,14 +143,16 @@ router.get("/", auth, adminOnly, async (req, res) => {
 });
 
 // GET /api/tickets/:id - View specific ticket details
-router.get("/:id", auth, async (req, res) => {
+router.get("/:id", authOrAdmin, async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id).populate("user", "name email");
     if (!ticket) return res.status(404).json({ success: false, message: "Ticket not found" });
 
     // Ensure customer can only view their own ticket
-    if (req.user.role !== "admin" && ticket.user._id.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized to view this ticket" });
+    if (req.user.role !== "admin") {
+      if (!ticket.user || ticket.user._id.toString() !== req.user.id) {
+        return res.status(403).json({ success: false, message: "Not authorized to view this ticket" });
+      }
     }
 
     res.json({ success: true, data: ticket });
@@ -160,18 +162,18 @@ router.get("/:id", auth, async (req, res) => {
 });
 
 // PUT /api/tickets/:id/reply - Add a reply to a ticket
-router.put("/:id/reply", auth, async (req, res) => {
+router.put("/:id/reply", authOrAdmin, async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) return res.status(400).json({ success: false, message: "Message text is required" });
 
-    const ticket = await Ticket.findById(req.params.id);
+    const ticket = await Ticket.findById(req.params.id).populate("user", "name email");
     if (!ticket) return res.status(404).json({ success: false, message: "Ticket not found" });
 
     const isCustomer = req.user.role !== "admin";
 
     // Ensure customer can only reply to their own ticket
-    if (isCustomer && ticket.user.toString() !== req.user.id) {
+    if (isCustomer && (!ticket.user || ticket.user._id.toString() !== req.user.id)) {
       return res.status(403).json({ success: false, message: "Not authorized" });
     }
 
@@ -189,12 +191,42 @@ router.put("/:id/reply", auth, async (req, res) => {
     // If admin replies, notify the customer
     if (!isCustomer) {
       const ticketIdDisplay = ticket._id.toString().slice(-6).toUpperCase();
-      await Notification.create({
-        userId: ticket.user,
-        title: "Support Ticket Reply",
-        message: `Admin replied to your ticket #${ticketIdDisplay}.`,
-        type: "ticket_reply"
-      });
+      
+      if (ticket.user) {
+        // Registered User
+        await Notification.create({
+          userId: ticket.user._id,
+          title: "Support Ticket Reply",
+          message: `Admin replied to your ticket #${ticketIdDisplay}.`,
+          type: "support_ticket_reply"
+        });
+        
+        // Emit socket to customer
+        const io = req.app.get("io");
+        if (io) {
+          io.emit(`user_notification_${ticket.user._id.toString()}`, {
+            title: "Support Ticket Reply",
+            desc: `Admin replied to your ticket #${ticketIdDisplay}.`,
+            type: "support_ticket_reply"
+          });
+        }
+      }
+
+      // Send email to customer (guest or registered)
+      const customerEmail = ticket.user ? ticket.user.email : ticket.guestEmail;
+      const customerName = ticket.user ? ticket.user.name : ticket.guestName;
+      if (customerEmail) {
+        try {
+          const { sendEmail } = require("../utils/email");
+          await sendEmail({
+            to: customerEmail,
+            subject: `New Reply to Ticket #${ticketIdDisplay}`,
+            text: `Hi ${customerName || 'Customer'},\n\nAn admin has replied to your ticket "${ticket.subject}".\n\nReply:\n${text}\n\nYou can view the full ticket in your account dashboard.\n\nBest regards,\nDowntown Boutique Team`
+          });
+        } catch (emailErr) {
+          console.error("Failed to send reply email to customer:", emailErr);
+        }
+      }
     } else {
       const ticketIdDisplay = ticket._id.toString().slice(-6).toUpperCase();
       const admins = await User.find({ role: "admin" });
@@ -224,7 +256,7 @@ router.put("/:id/reply", auth, async (req, res) => {
 });
 
 // PUT /api/tickets/:id/status - Admin change ticket status
-router.put("/:id/status", auth, adminOnly, async (req, res) => {
+router.put("/:id/status", adminAuth, async (req, res) => {
   try {
     const { status } = req.body;
     const ticket = await Ticket.findById(req.params.id);
@@ -249,7 +281,7 @@ router.put("/:id/status", auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/tickets/:id - Admin delete a ticket
-router.delete("/:id", auth, adminOnly, async (req, res) => {
+router.delete("/:id", adminAuth, async (req, res) => {
   try {
     const ticket = await Ticket.findByIdAndDelete(req.params.id);
     if (!ticket) return res.status(404).json({ success: false, message: "Ticket not found" });

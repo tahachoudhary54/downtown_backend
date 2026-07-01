@@ -12,13 +12,14 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const { sendEmail } = require("../utils/email");
 const crypto = require("crypto");
 
-const generateTokens = async (user, res) => {
+const generateTokens = async (user, res, loginType = "user") => {
   const payload = {
     user: {
       id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
+      loginType,
     }
   };
   const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
@@ -30,7 +31,8 @@ const generateTokens = async (user, res) => {
   user.refreshTokens.push(hashedToken);
   await user.save();
 
-  res.cookie("refreshToken", refreshToken, {
+  const cookieName = loginType === "admin" ? "adminRefreshToken" : "refreshToken";
+  res.cookie(cookieName, refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
@@ -298,12 +300,16 @@ router.post("/resend-otp", async (req, res) => {
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, loginType = "user" } = req.body;
 
     // Check if user exists
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ success: false, message: "Invalid credentials" });
+    }
+
+    if (loginType === "admin" && user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Access denied. Admin only." });
     }
 
     // Check if verified
@@ -317,7 +323,7 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid credentials" });
     }
 
-    const token = await generateTokens(user, res);
+    const token = await generateTokens(user, res, loginType);
     res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error(err.message);
@@ -328,7 +334,7 @@ router.post("/login", async (req, res) => {
 // POST /api/auth/google
 router.post("/google", async (req, res) => {
   try {
-    const { credential } = req.body;
+    const { credential, loginType = "user" } = req.body;
     if (!credential) {
       return res.status(400).json({ success: false, message: "No credential provided" });
     }
@@ -355,7 +361,6 @@ router.post("/google", async (req, res) => {
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create new user, without password, auto-verified
       user = new User({
         name,
         email,
@@ -363,12 +368,15 @@ router.post("/google", async (req, res) => {
       });
       await user.save();
     } else if (!user.isVerified) {
-      // If user exists but is not verified, verify them
       user.isVerified = true;
       await user.save();
     }
 
-    const token = await generateTokens(user, res);
+    if (loginType === "admin" && user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Access denied. Admin only." });
+    }
+
+    const token = await generateTokens(user, res, loginType);
     res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error("Google Auth Error:", err.message);
@@ -458,7 +466,10 @@ router.post("/reset-password", async (req, res) => {
 // GET /api/auth/refresh
 router.get("/refresh", async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken;
+    const type = req.query.type === "admin" ? "admin" : "user";
+    const cookieName = type === "admin" ? "adminRefreshToken" : "refreshToken";
+    const refreshToken = req.cookies[cookieName];
+    
     if (!refreshToken) {
       return res.status(401).json({ success: false, message: "No refresh token provided" });
     }
@@ -469,6 +480,10 @@ router.get("/refresh", async (req, res) => {
       decoded = jwt.verify(refreshToken, secret);
     } catch (err) {
       return res.status(401).json({ success: false, message: "Invalid or expired refresh token" });
+    }
+    
+    if (decoded.user.loginType !== type) {
+      return res.status(401).json({ success: false, message: "Token type mismatch" });
     }
     
     const user = await User.findById(decoded.user.id);
@@ -485,14 +500,14 @@ router.get("/refresh", async (req, res) => {
       // Wipe all refresh tokens to force re-login on all devices.
       user.refreshTokens = [];
       await user.save();
-      res.clearCookie("refreshToken");
+      res.clearCookie(cookieName);
       return res.status(401).json({ success: false, message: "Refresh token rotation anomaly detected. Session revoked." });
     }
 
     // Valid token. Remove it and generate a new one.
     user.refreshTokens.splice(tokenIndex, 1);
     
-    const token = await generateTokens(user, res);
+    const token = await generateTokens(user, res, type);
     res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error("Refresh token error:", err.message);
@@ -502,7 +517,10 @@ router.get("/refresh", async (req, res) => {
 
 // POST /api/auth/logout
 router.post("/logout", async (req, res) => {
-  const refreshToken = req.cookies.refreshToken;
+  const type = req.query.type === "admin" ? "admin" : "user";
+  const cookieName = type === "admin" ? "adminRefreshToken" : "refreshToken";
+  const refreshToken = req.cookies[cookieName];
+  
   if (refreshToken) {
     try {
       const hashedToken = crypto.createHash("sha256").update(refreshToken).digest("hex");
@@ -517,7 +535,7 @@ router.post("/logout", async (req, res) => {
       // Ignore invalid tokens on logout
     }
   }
-  res.clearCookie("refreshToken", {
+  res.clearCookie(cookieName, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",

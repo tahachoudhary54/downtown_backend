@@ -29,9 +29,11 @@ if (process.env.EMAIL_PASS) {
  */
 const sendEmail = async ({ to, subject, text, html, replyTo }) => {
   const fromAddress = process.env.EMAIL_USER || "no-reply@localhost";
+  const defaultReplyTo = process.env.ADMIN_EMAIL || fromAddress;
+  
   const mailOptions = {
     from: `"Downtown Boutique" <${fromAddress}>`,
-    replyTo: replyTo || fromAddress,
+    replyTo: replyTo || defaultReplyTo,
     to,
     subject,
     text,

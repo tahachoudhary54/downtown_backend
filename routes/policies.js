@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Policy = require("../models/Policy");
-const { auth, adminOnly } = require("../middleware/authMiddleware");
+const { auth, adminAuth } = require("../middleware/authMiddleware");
 
 // Helper to get or create policies doc
 const getOrCreatePolicy = async () => {
@@ -24,7 +24,7 @@ router.get("/", async (req, res) => {
 });
 
 // PUT /api/policies - Admin Only
-router.put("/", auth, adminOnly, async (req, res) => {
+router.put("/", adminAuth, async (req, res) => {
   try {
     let policy = await getOrCreatePolicy();
     
