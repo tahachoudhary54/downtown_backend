@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Order = require("../models/Order");
-const { auth, adminAuth } = require("../middleware/authMiddleware");
+const { auth, adminAuth, authOrAdmin } = require("../middleware/authMiddleware");
 
 const Notification = require("../models/Notification");
 const User = require("../models/User");
@@ -264,7 +264,7 @@ router.put("/:id/status", adminAuth, async (req, res) => {
 });
 
 // DELETE /api/orders/:id - Admin or Owner delete order
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", authOrAdmin, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });

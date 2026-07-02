@@ -27,9 +27,10 @@ const generateTokens = async (user, res, loginType = "user") => {
   const refreshToken = jwt.sign(payload, secret, { expiresIn: "30d" });
 
   const hashedToken = crypto.createHash("sha256").update(refreshToken).digest("hex");
-  if (!user.refreshTokens) user.refreshTokens = [];
-  user.refreshTokens.push(hashedToken);
-  await user.save();
+  await User.updateOne(
+    { _id: user.id },
+    { $push: { refreshTokens: { $each: [hashedToken], $slice: -20 } } }
+  );
 
   const cookieName = loginType === "admin" ? "adminRefreshToken" : "refreshToken";
   res.cookie(cookieName, refreshToken, {
@@ -498,14 +499,16 @@ router.get("/refresh", async (req, res) => {
     if (tokenIndex === -1) {
       // THEFT DETECTED: A valid but unrecorded refresh token was used.
       // Wipe all refresh tokens to force re-login on all devices.
-      user.refreshTokens = [];
-      await user.save();
+      await User.updateOne({ _id: user.id }, { $set: { refreshTokens: [] } });
       res.clearCookie(cookieName);
       return res.status(401).json({ success: false, message: "Refresh token rotation anomaly detected. Session revoked." });
     }
 
-    // Valid token. Remove it and generate a new one.
-    user.refreshTokens.splice(tokenIndex, 1);
+    // Valid token. Remove it atomically
+    await User.updateOne(
+      { _id: user.id },
+      { $pull: { refreshTokens: hashedToken } }
+    );
     
     const token = await generateTokens(user, res, type);
     res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
@@ -527,9 +530,8 @@ router.post("/logout", async (req, res) => {
       const secret = process.env.JWT_SECRET || "fallback_secret_key_change_in_production";
       const decoded = jwt.verify(refreshToken, secret);
       const user = await User.findById(decoded.user.id);
-      if (user && user.refreshTokens) {
-        user.refreshTokens = user.refreshTokens.filter(t => t !== hashedToken);
-        await user.save();
+      if (user) {
+        await User.updateOne({ _id: user.id }, { $pull: { refreshTokens: hashedToken } });
       }
     } catch (err) {
       // Ignore invalid tokens on logout
