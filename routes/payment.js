@@ -34,6 +34,9 @@ router.post("/create-order", auth, async (req, res) => {
 
     const order = await razorpay.orders.create(options);
     
+    console.log("process.env.RAZORPAY_KEY_ID:", process.env.RAZORPAY_KEY_ID);
+    console.log("order returned by create():", order);
+
     if (!order) {
       return res.status(500).json({ success: false, message: "Failed to create Razorpay order" });
     }
