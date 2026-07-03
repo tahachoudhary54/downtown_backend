@@ -26,6 +26,13 @@ const generateConversationTitle = (prompt) => {
     return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Fashion Consultation";
 };
 
+const ensureArray = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string') return [val];
+    return [];
+};
+
 // Retry wrapper: retries ONCE on 429/503, otherwise throws immediately
 async function callAIWithRetry(apiCallFn) {
     try {
@@ -64,23 +71,41 @@ When the user's intent is related to discovering, recommending, browsing, compar
 Never respond with a generic marketing paragraph if products can be shown.
 Never invent products, prices, or stock.
 
-HIGH PRIORITY LANGUAGE RULE:
-You MUST reply in the EXACT same language the customer used. 
-- If the customer writes in English (e.g. "show me black shirts", "I need an outfit"), you MUST reply in 100% English. DO NOT use Hindi or Hinglish.
-- Only reply in Hindi or Hinglish IF the customer specifically writes their message in Hindi or Hinglish (e.g. "kuch naya dikhao").
-- If you are unsure or the message is very short, ALWAYS default to English.
+CRITICAL LANGUAGE RULE — HIGHEST PRIORITY, NEVER IGNORE:
+You MUST detect the language of the user's LATEST message and reply ONLY in that language.
+
+Step 1 — Detect the language of the user's current message:
+- If the user wrote in English → reply in English only.
+- If the user wrote in Hindi (Devanagari script or clear Hindi words in Roman letters like "mujhe", "chahiye", "dikhao", "batao") → reply in natural Hinglish (Hindi in English letters), keeping it casual and friendly.
+- If the user wrote in Hinglish (informal mix of Hindi and English in Roman letters) → reply in natural Hinglish.
+
+Step 2 — Lock the language for your reply:
+- NEVER mix languages unless the user mixes them first.
+- NEVER reply in Hindi/Hinglish if the user wrote in English.
+- NEVER reply in English if the user wrote in Hindi or Hinglish.
+- If the user switches language mid-conversation, YOU must switch too, immediately.
+
+Step 3 — Default rule:
+- If the message is very short, ambiguous, or contains only numbers/symbols, default to English.
+
+Examples:
+User: "show me black shirts" → Reply: English only
+User: "mujhe kala shirt chahiye" → Reply: Hinglish only (e.g. "Yeh raha ek zabardast black shirt collection!")
+User: "kuch party wear dikhao under 2000" → Reply: Hinglish only
+User: "I need something for college" → Reply: English only
+User: "college ke liye kuch suggest karo" → Reply: Hinglish only
 
 IMPORTANT BEHAVIOR RULE: DO NOT use any names to address the user unless they explicitly tell you their name. Do not hallucinate names.
 
-If the user asks an unrelated question (like weather, politics, math, coding, etc.), politely decline by saying:
-"I'm Downtown AI Stylist. I specialize in helping you find the perfect outfits, sizes, and products from Downtown Boutique. Tell me what you're looking for, and I'll be happy to help."
+If the user asks an unrelated question (like weather, politics, math, coding, etc.), politely decline in the SAME language they used.
 
-If they are just casually chatting, greeting, or saying hi, set intent to "chat" and respond warmly.
+If they are just casually chatting, greeting, or saying hi, set intent to "chat" and respond warmly in their language.
 If the request is ambiguous, ask only the minimum clarification needed.
 
 IMPORTANT: Maintain context from previous messages! If the user is refining a previous search (e.g., they previously asked for "college outfit" and now say "I want it in black"), you MUST carry over and include all previously established constraints (budget, category, occasion, fit) into your new JSON output.
 
 Your goal is to behave like an intelligent shopping assistant that understands meaning, not keywords.`;
+
 
 async function executeKeywordFallback(prompt, reasonMessage) {
     const lowerPrompt = prompt.toLowerCase();
@@ -283,6 +308,10 @@ OUTPUT JSON with these exact keys:
             }));
 
             llmOutput = JSON.parse(response.choices[0].message.content);
+            llmOutput.fit = ensureArray(llmOutput.fit);
+            llmOutput.category = ensureArray(llmOutput.category);
+            llmOutput.exact_colors = ensureArray(llmOutput.exact_colors);
+            llmOutput.similar_colors = ensureArray(llmOutput.similar_colors);
             
             // Save to cache asynchronously
             PromptCache.create({ cacheKey, intentData: llmOutput }).catch(e => console.error("Cache save error:", e.message));
@@ -465,6 +494,12 @@ exports.processChat = async (req, res) => {
         }
 
         llmOutput = JSON.parse(response.choices[0].message.content);
+        llmOutput.fit = ensureArray(llmOutput.fit);
+        llmOutput.occasion = ensureArray(llmOutput.occasion);
+        llmOutput.category = ensureArray(llmOutput.category);
+        llmOutput.season = ensureArray(llmOutput.season);
+        llmOutput.exact_colors = ensureArray(llmOutput.exact_colors);
+        llmOutput.similar_colors = ensureArray(llmOutput.similar_colors);
         
         if (llmOutput.user_preferences_updates && userId) {
             try {
@@ -681,6 +716,14 @@ OUTPUT JSON with these exact keys:
                 response_format: { type: 'json_object' }
             }));
             llmOutput = JSON.parse(response.choices[0].message.content);
+            llmOutput.category = ensureArray(llmOutput.category);
+            llmOutput.subcategory = ensureArray(llmOutput.subcategory);
+            llmOutput.primary_colors = ensureArray(llmOutput.primary_colors);
+            llmOutput.secondary_colors = ensureArray(llmOutput.secondary_colors);
+            llmOutput.fit = ensureArray(llmOutput.fit);
+            llmOutput.style = ensureArray(llmOutput.style);
+            llmOutput.pattern = ensureArray(llmOutput.pattern);
+            llmOutput.occasion = ensureArray(llmOutput.occasion);
         } catch (apiError) {
             console.warn("Groq Vision API Error (executing smart catalog fallback):", apiError.message);
             // Smart offline vision fallback: fetch top featured catalog products
