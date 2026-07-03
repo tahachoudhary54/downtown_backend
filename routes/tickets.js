@@ -191,6 +191,9 @@ router.put("/:id/reply", authOrAdmin, async (req, res) => {
     // If admin replies, notify the customer
     if (!isCustomer) {
       const ticketIdDisplay = ticket._id.toString().slice(-6).toUpperCase();
+      const customerEmail = ticket.user ? ticket.user.email : ticket.guestEmail;
+      const customerName = ticket.user ? ticket.user.name : ticket.guestName;
+      const { sendEmail } = require("../utils/email");
       
       if (ticket.user) {
         // Registered User
@@ -198,7 +201,8 @@ router.put("/:id/reply", authOrAdmin, async (req, res) => {
           userId: ticket.user._id,
           title: "Support Ticket Reply",
           message: `Admin replied to your ticket #${ticketIdDisplay}.`,
-          type: "support_ticket_reply"
+          type: "support_ticket_reply",
+          ticketId: ticket._id
         });
         
         // Emit socket to customer
@@ -207,24 +211,35 @@ router.put("/:id/reply", authOrAdmin, async (req, res) => {
           io.emit(`user_notification_${ticket.user._id.toString()}`, {
             title: "Support Ticket Reply",
             desc: `Admin replied to your ticket #${ticketIdDisplay}.`,
-            type: "support_ticket_reply"
+            type: "support_ticket_reply",
+            ticketId: ticket._id
           });
         }
-      }
 
-      // Send email to customer (guest or registered)
-      const customerEmail = ticket.user ? ticket.user.email : ticket.guestEmail;
-      const customerName = ticket.user ? ticket.user.name : ticket.guestName;
-      if (customerEmail) {
-        try {
-          const { sendEmail } = require("../utils/email");
-          await sendEmail({
-            to: customerEmail,
-            subject: `New Reply to Ticket #${ticketIdDisplay}`,
-            text: `Hi ${customerName || 'Customer'},\n\nAn admin has replied to your ticket "${ticket.subject}".\n\nReply:\n${text}\n\nYou can view the full ticket in your account dashboard.\n\nBest regards,\nDowntown Boutique Team`
-          });
-        } catch (emailErr) {
-          console.error("Failed to send reply email to customer:", emailErr);
+        // Send brief email to registered customer
+        if (customerEmail) {
+          try {
+            await sendEmail({
+              to: customerEmail,
+              subject: `Your Support Request Has Been Updated`,
+              text: `Hi ${customerName || 'Customer'},\n\nAn admin has replied to your ticket "${ticket.subject}".\n\nPlease log in and view the reply in your account dashboard under Support Tickets.\n\nBest regards,\nDowntown Boutique Team`
+            });
+          } catch (emailErr) {
+            console.error("Failed to send reply email to customer:", emailErr);
+          }
+        }
+      } else {
+        // Guest User - Send full reply email
+        if (customerEmail) {
+          try {
+            await sendEmail({
+              to: customerEmail,
+              subject: `New Reply to Ticket #${ticketIdDisplay}`,
+              text: `Hi ${customerName || 'Customer'},\n\nAn admin has replied to your ticket "${ticket.subject}".\n\nReply:\n${text}\n\nBest regards,\nDowntown Boutique Team`
+            });
+          } catch (emailErr) {
+            console.error("Failed to send reply email to customer:", emailErr);
+          }
         }
       }
     } else {
