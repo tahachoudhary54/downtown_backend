@@ -86,23 +86,18 @@ router.delete("/:id", adminAuth, async (req, res) => {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ success: false, message: "Category not found" });
 
-    // Check if any products use this category
-    const productCount = await Product.countDocuments({ category: category.name });
-    if (productCount > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Cannot delete category. There are ${productCount} products assigned to it.` 
-      });
-    }
+    // Delete all products using this category
+    await Product.deleteMany({ category: category.name });
 
     await Category.findByIdAndDelete(req.params.id);
 
     const io = req.app.get("io");
     if (io) {
       io.emit("data_updated", { type: "category", action: "delete" });
+      io.emit("data_updated", { type: "product", action: "delete_many" });
     }
 
-    res.json({ success: true, message: "Category deleted successfully" });
+    res.json({ success: true, message: "Category and its associated products deleted successfully" });
   } catch (error) {
     console.error("Delete category error:", error);
     res.status(500).json({ success: false, message: "Server Error" });

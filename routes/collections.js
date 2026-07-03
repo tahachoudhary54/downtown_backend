@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Collection = require("../models/Collection");
+const Product = require("../models/Product");
 const { auth, adminAuth } = require("../middleware/authMiddleware");
 
 // GET all collections
@@ -52,9 +53,20 @@ router.put("/:id", adminAuth, async (req, res) => {
 // DELETE a collection
 router.delete("/:id", adminAuth, async (req, res) => {
   try {
-    const collection = await Collection.findByIdAndDelete(req.params.id);
+    const collection = await Collection.findById(req.params.id);
     if (!collection) return res.status(404).json({ success: false, message: "Collection not found" });
-    res.json({ success: true, message: "Collection deleted" });
+
+    // Delete all products associated with this essential collection
+    await Product.deleteMany({ essentialCollection: collection.name });
+
+    await Collection.findByIdAndDelete(req.params.id);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("data_updated", { type: "product", action: "delete_many" });
+    }
+
+    res.json({ success: true, message: "Collection and its associated products deleted successfully" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
