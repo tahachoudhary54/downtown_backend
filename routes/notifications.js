@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const Notification = require("../models/Notification");
-const { auth } = require("../middleware/authMiddleware");
+const { authOrAdmin } = require("../middleware/authMiddleware");
 
 // GET /api/notifications - Get all notifications for logged-in user
-router.get("/", auth, async (req, res) => {
+router.get("/", authOrAdmin, async (req, res) => {
   try {
     const notifications = await Notification.find({ userId: req.user.id })
       .sort({ createdAt: -1 })
@@ -16,7 +16,7 @@ router.get("/", auth, async (req, res) => {
 });
 
 // GET /api/notifications/unread-count - Get count of unread notifications
-router.get("/unread-count", auth, async (req, res) => {
+router.get("/unread-count", authOrAdmin, async (req, res) => {
   try {
     const count = await Notification.countDocuments({ userId: req.user.id, isRead: false });
     res.json({ success: true, count });
@@ -27,7 +27,7 @@ router.get("/unread-count", auth, async (req, res) => {
 
 // PUT /api/notifications/mark-all-read - Mark all as read
 // IMPORTANT: This MUST come before /:id/read, or Express will treat "mark-all-read" as an :id
-router.put("/mark-all-read", auth, async (req, res) => {
+router.put("/mark-all-read", authOrAdmin, async (req, res) => {
   try {
     await Notification.updateMany(
       { userId: req.user.id, isRead: false },
@@ -40,7 +40,7 @@ router.put("/mark-all-read", auth, async (req, res) => {
 });
 
 // PUT /api/notifications/:id/read - Mark specific notification as read
-router.put("/:id/read", auth, async (req, res) => {
+router.put("/:id/read", authOrAdmin, async (req, res) => {
   try {
     const notification = await Notification.findOneAndUpdate(
       { _id: req.params.id, userId: req.user.id },
@@ -55,7 +55,7 @@ router.put("/:id/read", auth, async (req, res) => {
 });
 
 // DELETE /api/notifications/:id - Delete specific notification
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", authOrAdmin, async (req, res) => {
   try {
     const notification = await Notification.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
     if (!notification) return res.status(404).json({ success: false, message: "Notification not found" });
