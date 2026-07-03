@@ -1,9 +1,20 @@
 const nodemailer = require("nodemailer");
-const { google } = require("googleapis");
 
 let transporter;
 
-if (process.env.EMAIL_PASS) {
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_REFRESH_TOKEN) {
+  // Use Gmail OAuth2 for reliable delivery
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      type: "OAuth2",
+      user: process.env.EMAIL_USER,
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+    },
+  });
+} else if (process.env.EMAIL_PASS) {
   transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {

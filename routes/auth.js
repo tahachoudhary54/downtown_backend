@@ -45,141 +45,28 @@ const generateTokens = async (user, res, loginType = "user") => {
 // Helper function to send OTP email with fallback to Ethereal (development)
 const sendOtpEmail = async (email, otp) => {
   const fromAddress = process.env.EMAIL_USER || "no-reply@localhost";
-  const mailOptions = {
-    from: `"Downtown Boutique" <${fromAddress}>`,
-    replyTo: fromAddress,
-    to: email,
-    subject: "Your Verification Code - Downtown Boutique",
-    text: `Your Verification Code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you didn't create an account, please ignore this email.`,
-    html: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Verify Your Email – Downtown Boutique</title>
-</head>
-<body style="margin:0; padding:0; background-color:#0d0d0d; font-family:'Inter','Poppins',Arial,sans-serif; -webkit-font-smoothing:antialiased;">
-
-  <!-- Outer wrapper -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0d0d0d; padding:40px 16px;">
-    <tr>
-      <td align="center">
-
-        <!-- Email Card -->
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; background:#111111; border-radius:16px; overflow:hidden; box-shadow:0 24px 64px rgba(0,0,0,0.6);">
-
-          <!-- ── HEADER ── -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#111111 0%,#1a1a1a 100%); padding:40px 40px 32px; text-align:center; border-bottom:1px solid #222;">
-              <!-- Brand name as text (no broken image) -->
-              <p style="margin:0 0 4px; font-size:11px; font-weight:700; letter-spacing:4px; color:#c8a96e; text-transform:uppercase;">Downtown</p>
-              <p style="margin:0; font-size:26px; font-weight:800; letter-spacing:2px; color:#ffffff; text-transform:uppercase; line-height:1;">BOUTIQUE</p>
-              <div style="width:48px; height:2px; background:linear-gradient(90deg,#c8a96e,#e8c97e); margin:16px auto 0; border-radius:1px;"></div>
-            </td>
-          </tr>
-
-          <!-- ── HERO SECTION ── -->
-          <tr>
-            <td style="padding:44px 40px 32px; text-align:center;">
-              <!-- Lock icon (table-based centering for email compatibility) -->
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
-                <tr>
-                  <td align="center">
-                    <table cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td style="width:64px; height:64px; background:linear-gradient(135deg,#1e1e1e,#2a2a2a); border-radius:50%; border:1px solid #2e2e2e; text-align:center; vertical-align:middle;">
-                          <span style="font-size:28px; line-height:64px; display:block;">🔒</span>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-
-              <h1 style="margin:0 0 16px; font-size:26px; font-weight:700; color:#ffffff; letter-spacing:-0.3px; line-height:1.3;">
-                Verify Your Email Address
-              </h1>
-              <p style="margin:0; font-size:15px; color:#888888; line-height:1.7; max-width:400px; margin-left:auto; margin-right:auto;">
-                Thank you for creating your Downtown Boutique account. Enter the verification code below to continue.
-              </p>
-            </td>
-          </tr>
-
-          <!-- ── OTP CARD ── -->
-          <tr>
-            <td style="padding:0 40px 40px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="background:#1a1a1a; border:1px solid #2a2a2a; border-radius:14px; padding:32px 24px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
-                    <p style="margin:0 0 20px; font-size:11px; font-weight:700; letter-spacing:3px; color:#c8a96e; text-transform:uppercase;">Your Verification Code</p>
-
-                    <!-- OTP digits -->
-                    <div style="display:inline-block; background:#111111; border:1px solid #2e2e2e; border-radius:12px; padding:18px 36px; margin-bottom:20px;">
-                      <span style="font-size:40px; font-weight:800; letter-spacing:10px; color:#ffffff; font-family:'Courier New',Courier,monospace; line-height:1;">${otp}</span>
-                    </div>
-
-                    <p style="margin:0; font-size:13px; color:#555555; letter-spacing:0.3px;">
-                      ⏱ This code expires in <strong style="color:#c8a96e;">10 minutes</strong>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- ── SECURITY NOTICE ── -->
-          <tr>
-            <td style="padding:0 40px 40px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="background:#161616; border-left:3px solid #c8a96e; border-radius:0 8px 8px 0; padding:14px 18px;">
-                    <p style="margin:0; font-size:13px; color:#666666; line-height:1.6;">
-                      🔐 <strong style="color:#888888;">Security Notice:</strong> If you didn't create a Downtown Boutique account, please ignore this email. No action is required.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- ── DIVIDER ── -->
-          <tr>
-            <td style="padding:0 40px;">
-              <div style="height:1px; background:linear-gradient(90deg,transparent,#222,transparent);"></div>
-            </td>
-          </tr>
-
-          <!-- ── FOOTER ── -->
-          <tr>
-            <td style="padding:28px 40px 36px; text-align:center;">
-              <p style="margin:0 0 12px; font-size:11px; font-weight:700; letter-spacing:3px; color:#333333; text-transform:uppercase;">Downtown Boutique</p>
-              <p style="margin:0 0 16px; font-size:12px; color:#444444; line-height:1.6;">
-                Premium Men's Fashion &nbsp;|&nbsp; Est. 2024
-              </p>
-              <p style="margin:0; font-size:11px; color:#333333; line-height:2;">
-                <a href="mailto:support@downtownboutique.com" style="color:#c8a96e; text-decoration:none; margin:0 10px;">Contact Support</a>
-                <span style="color:#2e2e2e;">|</span>
-                <a href="https://downtownboutique.com/privacy" style="color:#c8a96e; text-decoration:none; margin:0 10px;">Privacy Policy</a>
-              </p>
-              <p style="margin:20px 0 0; font-size:11px; color:#2e2e2e;">© 2026 Downtown Boutique. All rights reserved.</p>
-            </td>
-          </tr>
-
-        </table>
-        <!-- /Email Card -->
-
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`,
-  };
+  
+  // Keep it extremely simple to avoid triggering Gmail's strict spam filters
+  // for automated emails sent from a @gmail.com address.
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2>Your Verification Code</h2>
+      <p>Thank you for creating an account with us.</p>
+      <div style="background-color: #f4f4f4; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+        <h1 style="margin: 0; letter-spacing: 5px;">${otp}</h1>
+      </div>
+      <p>This code expires in 10 minutes.</p>
+      <p style="color: #666; font-size: 12px; margin-top: 40px;">
+        If you didn't request this code, please ignore this email.
+      </p>
+    </div>
+  `;
 
   return sendEmail({
     to: email,
-    subject: "Your Verification Code - Downtown Boutique",
+    subject: "Verification Code",
     text: `Your Verification Code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you didn't create an account, please ignore this email.`,
-    html: mailOptions.html
+    html: htmlContent
   });
 };
 
@@ -384,6 +271,8 @@ router.post("/google", async (req, res) => {
     res.status(500).json({ success: false, message: "Auth failed" });
   }
 });
+
+
 
 // POST /api/auth/forgot-password
 router.post("/forgot-password", async (req, res) => {
