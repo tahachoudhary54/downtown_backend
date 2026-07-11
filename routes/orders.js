@@ -6,11 +6,21 @@ const { auth, adminAuth, authOrAdmin } = require("../middleware/authMiddleware")
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 const Product = require("../models/Product");
+const Razorpay = require("razorpay");
+
+// Initialize Razorpay instance
+let razorpay;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+}
 
 // POST /api/orders - Create a new order
 router.post("/", async (req, res) => {
   try {
-    const { user, customer, shippingAddress, items, financials, paymentMethod, razorpayOrderId, razorpayPaymentId } = req.body;
+    const { user, customer, shippingAddress, items, financials, paymentMethod } = req.body;
 
     // Fetch all products involved in the order at once
     const productIds = [...new Set(items.map(item => item.product.toString()))];
@@ -41,6 +51,22 @@ router.post("/", async (req, res) => {
       }
     }
 
+    if (!razorpay) {
+      return res.status(500).json({ success: false, message: "Razorpay credentials not configured on server" });
+    }
+
+    // Create Razorpay Order
+    const options = {
+      amount: Math.round(financials.total * 100), // amount in paise
+      currency: "INR",
+      receipt: `rcpt_${Date.now()}`
+    };
+
+    const razorpayOrder = await razorpay.orders.create(options);
+    if (!razorpayOrder) {
+      return res.status(500).json({ success: false, message: "Failed to create Razorpay order" });
+    }
+
     const order = new Order({
       user,
       customer,
@@ -48,100 +74,14 @@ router.post("/", async (req, res) => {
       items,
       financials,
       paymentMethod,
-      razorpayOrderId,
-      razorpayPaymentId,
-      paymentStatus: "Paid", // Mocking success immediately for now
+      razorpayOrderId: razorpayOrder.id,
+      paymentStatus: "Pending",
       orderStatus: "Pending Delivery Quote"
     });
 
     await order.save();
 
-    // Deduct stock and check for low stock
-    let admins = null;
-    let notificationsToInsert = [];
-    const io = req.app.get("io");
-
-    for (const item of items) {
-      const productIdStr = item.product.toString();
-      const product = productsMap.get(productIdStr);
-      if (product) {
-        // Decrease total stock and increment soldCount
-        product.stock = Math.max(0, product.stock - item.quantity);
-        product.soldCount = (product.soldCount || 0) + item.quantity;
-        
-        // Decrease specific size inventory if present
-        if (product.inventory && product.inventory.has(item.size)) {
-          const currentSizeStock = product.inventory.get(item.size) || 0;
-          product.inventory.set(item.size, Math.max(0, currentSizeStock - item.quantity));
-        }
-
-        // Update inStock flag
-        if (product.stock === 0) {
-          product.inStock = false;
-        }
-
-        // Check for low stock alert
-        const threshold = product.lowStockThreshold || 5;
-        if (product.stock <= threshold) {
-          if (!admins) {
-            admins = await User.find({ role: "admin" });
-          }
-          admins.forEach(admin => {
-            notificationsToInsert.push({
-              userId: admin._id,
-              title: "Low Stock Alert",
-              message: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
-              type: "stock_alert"
-            });
-          });
-          if (io) {
-            io.emit("admin_notification", {
-              title: "Low Stock Alert",
-              desc: `Product "${product.name}" is running low. Only ${product.stock} left in stock.`,
-              type: "alert"
-            });
-          }
-        }
-      }
-    }
-
-    // Save all updated products in parallel
-    await Promise.all(Array.from(productsMap.values()).map(async (product) => {
-      await product.save();
-      // Emit real-time stock update
-      if (io) {
-        io.emit("stock_updated", {
-          productId: product._id,
-          stock: product.stock,
-          inStock: product.inStock,
-          inventory: product.inventory,
-          variants: product.variants
-        });
-        console.log(`📡 Emitted stock_updated for ${product.name}: ${product.stock} left`);
-      }
-    }));
-
-    // Insert all notifications in bulk
-    if (notificationsToInsert.length > 0) {
-      await Notification.insertMany(notificationsToInsert);
-    }
-
-    // Create website notification for customer (if logged in)
-    if (user) {
-      const orderIdDisplay = order._id.toString().slice(-6).toUpperCase();
-      await Notification.create({
-        userId: user,
-        orderId: order._id,
-        title: "Order Placed",
-        message: `Your order #${orderIdDisplay} has been successfully placed.`,
-        type: "order_placed"
-      });
-    }
-
-    if (io) {
-      io.emit("data_updated", { type: "order", action: "create" });
-    }
-    res.status(201).json({ success: true, data: order });
+    res.status(201).json({ success: true, data: order, razorpayOrderId: razorpayOrder.id });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
